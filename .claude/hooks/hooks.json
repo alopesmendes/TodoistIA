@@ -1,0 +1,130 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); cmd=$(echo \"$input\" | jq -r \".tool_input.command // empty\" 2>/dev/null); if echo \"$cmd\" | grep -qE \"git\\s+(push\\s+--force|push\\s+-f|reset\\s+--hard|clean\\s+-fd|branch\\s+-D)\"; then echo \"BLOCKED: Destructive git command detected ($cmd). Confirm with the user before proceeding.\" >&2; exit 2; fi'"
+          }
+        ],
+        "description": "Block destructive git commands (force push, reset --hard, clean -fd, branch -D) until user confirms"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); cmd=$(echo \"$input\" | jq -r \".tool_input.command // empty\" 2>/dev/null); if echo \"$cmd\" | grep -qE \"git\\s+commit.*--no-verify\"; then echo \"BLOCKED: --no-verify flag detected. Fix the hook issue instead of skipping it. See rules/common/security.md\" >&2; exit 2; fi'"
+          }
+        ],
+        "description": "Block git commit --no-verify to enforce pre-commit hooks"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | jq -r \".tool_input.file_path // empty\" 2>/dev/null); if [[ \"$file\" == *.kt ]] && [[ -f \"$file\" ]] && [[ \"$file\" != *Test* ]] && [[ \"$file\" != *test* ]] && [[ \"$file\" != *Fake* ]]; then matches=$(grep -n \"!!\" \"$file\" 2>/dev/null | grep -v \"^[[:space:]]*/\\(/\\|\\*\\)\" | head -5); if [ -n \"$matches\" ]; then echo \"Kotlin security: !! operator found in $file. Use ?. / ?: / requireNotNull() instead (rules/kotlin/security.md)\"; echo \"$matches\"; fi; fi'"
+          }
+        ],
+        "description": "Warn about !! operator in production Kotlin files after edit (excludes test files)"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | jq -r \".tool_input.file_path // empty\" 2>/dev/null); if [[ \"$file\" == *.kt ]] && [[ -f \"$file\" ]]; then matches=$(grep -nE \"(api[_-]?key|secret|password|token)\\s*=\\s*\\\"[^\\\"]+\\\"\" \"$file\" 2>/dev/null | grep -iv \"(BuildConfig|TODO|test|fake|mock|example|placeholder)\" | head -5); if [ -n \"$matches\" ]; then echo \"Security: Possible hardcoded secret in $file. Use BuildConfig or environment variables (rules/kotlin/security.md)\"; echo \"$matches\"; fi; fi'"
+          }
+        ],
+        "description": "Warn about potential hardcoded secrets in Kotlin files"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | jq -r \".tool_input.file_path // empty\" 2>/dev/null); if [[ \"$file\" == *.kt ]] && [[ -f \"$file\" ]] && [[ \"$file\" != *Test* ]] && [[ \"$file\" != *test* ]]; then matches=$(grep -nE \"\\bprintln\\s*\\(\" \"$file\" 2>/dev/null | head -5); if [ -n \"$matches\" ]; then echo \"Code quality: println() found in $file. Use a proper logging framework instead.\"; echo \"$matches\"; fi; fi'"
+          }
+        ],
+        "description": "Warn about println() in production Kotlin files (use logging framework)"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); file=$(echo \"$input\" | jq -r \".tool_input.file_path // empty\" 2>/dev/null); if [[ \"$file\" == *.kt ]] && [[ -f \"$file\" ]] && [[ \"$file\" != *Test* ]] && [[ \"$file\" != *test* ]]; then count=$(wc -l < \"$file\" 2>/dev/null | tr -d \" \"); if [ \"$count\" -gt 800 ] 2>/dev/null; then echo \"Code quality: $file has $count lines (max recommended: 800). Consider extracting into smaller files (rules/common/coding-style.md)\"; fi; fi'"
+          }
+        ],
+        "description": "Warn when a Kotlin file exceeds 800 lines"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); cmd=$(echo \"$input\" | jq -r \".tool_input.command // empty\" 2>/dev/null); output=$(echo \"$input\" | jq -r \".tool_output // empty\" 2>/dev/null); if echo \"$cmd\" | grep -qE \"gradlew.*(:build|:compileKotlin|:assemble)\" && echo \"$output\" | grep -qiE \"(BUILD FAILED|FAILURE|Compilation error|Unresolved reference)\"; then echo \"Build failed. Use /build-fix to diagnose and resolve the error.\"; fi'",
+            "async": true,
+            "timeout": 5
+          }
+        ],
+        "description": "Suggest /build-fix when a Gradle build fails"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); cmd=$(echo \"$input\" | jq -r \".tool_input.command // empty\" 2>/dev/null); output=$(echo \"$input\" | jq -r \".tool_output // empty\" 2>/dev/null); if echo \"$cmd\" | grep -qE \"gradlew.*(:[a-zA-Z]*[Tt]est|:allTests)\" && echo \"$output\" | grep -qiE \"(tests? FAILED|FAILURE|failures?:.*[1-9])\"; then echo \"Tests failed. Use /tdd to fix failing tests or /test-coverage to check coverage gaps.\"; fi'",
+            "async": true,
+            "timeout": 5
+          }
+        ],
+        "description": "Suggest /tdd or /test-coverage when Gradle tests fail"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'input=$(cat); cmd=$(echo \"$input\" | jq -r \".tool_input.command // empty\" 2>/dev/null); output=$(echo \"$input\" | jq -r \".tool_output // empty\" 2>/dev/null); if echo \"$cmd\" | grep -qE \"gh\\s+pr\\s+create\" && echo \"$output\" | grep -qE \"https://github\\.com/.*/pull/[0-9]+\"; then echo \"PR created. Use /code-review to review before requesting human review.\"; fi'",
+            "async": true,
+            "timeout": 5
+          }
+        ],
+        "description": "Suggest /code-review after PR creation"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'modified=$(git diff --name-only HEAD 2>/dev/null | grep \"\\.kt$\" | grep -v \"Test\\|test\\|Fake\"); if [ -n \"$modified\" ]; then bang_files=\"\"; for f in $modified; do if [ -f \"$f\" ] && grep -q \"!!\" \"$f\" 2>/dev/null; then bang_files=\"$bang_files $f\"; fi; done; if [ -n \"$bang_files\" ]; then echo \"Reminder: !! operator detected in modified files:$bang_files — replace with safe alternatives before committing.\"; fi; fi'",
+            "async": true,
+            "timeout": 10
+          }
+        ],
+        "description": "Final check for !! operator in all modified Kotlin files before session ends"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'modified=$(git diff --name-only HEAD 2>/dev/null | grep \"\\.kt$\" | grep -v \"Test\\|test\\|Fake\"); if [ -n \"$modified\" ]; then secret_files=\"\"; for f in $modified; do if [ -f \"$f\" ] && grep -qE \"(api[_-]?key|secret|password|token)\\s*=\\s*\\\"[A-Za-z0-9]\" \"$f\" 2>/dev/null; then secret_files=\"$secret_files $f\"; fi; done; if [ -n \"$secret_files\" ]; then echo \"SECURITY: Possible hardcoded secrets in modified files:$secret_files — do NOT commit these. Use BuildConfig or environment variables.\"; fi; fi'",
+            "async": true,
+            "timeout": 10
+          }
+        ],
+        "description": "Final security scan for hardcoded secrets in modified Kotlin files"
+      }
+    ]
+  }
+}
