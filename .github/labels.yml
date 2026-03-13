@@ -1,0 +1,78 @@
+# Issue type labels
+- name: epic
+  color: "7B68EE"
+  description: "High-level initiative grouping related user stories — never closed"
+
+- name: user-story
+  color: "1E90FF"
+  description: "User-facing feature or behavior linked to a parent epic"
+
+- name: task
+  color: "32CD32"
+  description: "Technical implementation task or enabler"
+
+- name: documentation
+  color: "0075CA"
+  description: "Documentation, articles, wiki, or maintenance chores"
+
+# Category labels (for tasks)
+- name: "cat:backend"
+  color: "D93F0B"
+  description: "Ktor server, API endpoints, server configuration"
+
+- name: "cat:frontend"
+  color: "FBCA04"
+  description: "Compose UI, screens, ViewModels, navigation"
+
+- name: "cat:domain"
+  color: "E99695"
+  description: "Shared business logic, use cases, repositories"
+
+- name: "cat:android"
+  color: "3DDC84"
+  description: "Android platform-specific code"
+
+- name: "cat:ios"
+  color: "000000"
+  description: "iOS platform-specific code"
+
+- name: "cat:desktop"
+  color: "5319E7"
+  description: "Desktop (JVM) platform-specific code"
+
+- name: "cat:web"
+  color: "F9D0C4"
+  description: "Web (JS/Wasm) platform-specific code"
+
+- name: "cat:devops"
+  color: "006B75"
+  description: "CI/CD, build config, Gradle, deployment"
+
+- name: "cat:testing"
+  color: "BFD4F2"
+  description: "Test infrastructure, coverage, test utilities"
+
+- name: "cat:security"
+  color: "B60205"
+  description: "Authentication, authorization, secrets management"
+
+# Documentation sub-types
+- name: "docs:technical"
+  color: "C5DEF5"
+  description: "Architecture, modules, data flows — developer-facing"
+
+- name: "docs:functional"
+  color: "D4C5F9"
+  description: "Business rules, user stories, DDD glossary — team-facing"
+
+- name: "docs:article"
+  color: "BFDADC"
+  description: "Blog post, tutorial, community content"
+
+- name: "docs:wiki"
+  color: "FEF2C0"
+  description: "GitHub wiki page creation or update"
+
+- name: chore
+  color: "EDEDED"
+  description: "Dependency update, cleanup, config, maintenance"

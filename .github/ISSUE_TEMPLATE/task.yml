@@ -1,0 +1,72 @@
+name: "Task / Enabler"
+description: "A technical task or enabler — implementation work categorized by area (backend, frontend, devops, etc.)."
+title: "[Task]: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Task / Enabler Template
+        Tasks are concrete, implementable units of work. Enablers are technical tasks that support feature delivery (infrastructure, tooling, refactoring).
+
+  - type: input
+    id: parent-story
+    attributes:
+      label: Parent Story (optional)
+      description: "Link to the parent user story if applicable (e.g., #42)."
+      placeholder: "#issue_number"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: "Select the area of the project this task belongs to."
+      options:
+        - "backend — Ktor server, API endpoints, server config"
+        - "frontend — Compose UI, screens, ViewModels, navigation"
+        - "domain — Shared business logic, use cases, repositories"
+        - "android — Android platform-specific code"
+        - "ios — iOS platform-specific code"
+        - "desktop — Desktop (JVM) platform-specific code"
+        - "web — Web (JS/Wasm) platform-specific code"
+        - "devops — CI/CD, build config, Gradle, deployment"
+        - "testing — Test infrastructure, coverage, test utilities"
+        - "security — Authentication, authorization, secrets"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "Describe what needs to be done and why."
+      placeholder: "Provide clear, actionable details about the task."
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-details
+    attributes:
+      label: Technical Details
+      description: "Include relevant file paths, modules, APIs, or architectural considerations."
+      placeholder: |
+        - Module: `shared/src/commonMain/...`
+        - Pattern: Repository + Use Case
+        - Dependencies: ktor-client, kotlinx-serialization
+    validations:
+      required: false
+
+  - type: textarea
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: "What must be true for this task to be considered complete?"
+      value: |
+        - [ ] Implementation complete
+        - [ ] Tests written and passing
+        - [ ] Code reviewed
+        - [ ] No build warnings introduced
+    validations:
+      required: true
