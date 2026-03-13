@@ -10,3 +10,13 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.ktor) apply false
 }
+
+tasks.register<Exec>("installGitHooks") {
+    group = "setup"
+    description = "Installs git hooks from scripts/git-hooks/"
+    commandLine("bash", "scripts/git-hooks/install-hooks.sh")
+}
+
+tasks.named("prepareKotlinBuildScriptModel") {
+    dependsOn("installGitHooks")
+}
