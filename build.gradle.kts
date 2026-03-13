@@ -3,6 +3,7 @@ plugins {
     // in each subproject's classloader
     alias(libs.plugins.androidApplication) apply false
     alias(libs.plugins.androidLibrary) apply false
+    alias(libs.plugins.androidKmpLibrary) apply false
     alias(libs.plugins.composeHotReload) apply false
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
@@ -14,7 +15,7 @@ plugins {
 tasks.register<Exec>("installGitHooks") {
     group = "setup"
     description = "Installs git hooks from scripts/git-hooks/"
-    commandLine("bash", "scripts/git-hooks/install-hooks.sh")
+    commandLine("bash", "scripts/git-hooks/install-hooks.sh", "--force")
 }
 
 tasks.named("prepareKotlinBuildScriptModel") {
