@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-hooks.sh - Installs all git hooks from scripts/git-hooks/
 #
-# Usage: ./scripts/git-hooks/install-hooks.sh
+# Usage: ./scripts/git-hooks/install-hooks.sh [--force]
 #
 # Installs hooks directly to .git/hooks/ — recommended when NOT using
 # the pre-commit framework for these hooks.
@@ -14,6 +14,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+
+FORCE=false
+if [[ "$1" == "--force" || "$1" == "-f" ]]; then
+    FORCE=true
+fi
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Git Hooks Installer${NC}"
@@ -42,12 +47,19 @@ install_hook() {
         return
     fi
 
-    if [ -f "$dest" ]; then
-        echo -e "${YELLOW}Warning: $hook_name already exists${NC}"
-        read -p "Overwrite? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Skipped $hook_name${NC}"
+    if [ -f "$dest" ] && [ "$FORCE" = false ]; then
+        # If not interactive, don't try to read
+        if [ -t 0 ]; then
+            echo -e "${YELLOW}Warning: $hook_name already exists${NC}"
+            read -p "Overwrite? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${YELLOW}Skipped $hook_name${NC}"
+                return
+            fi
+        else
+            echo -e "${YELLOW}Warning: $hook_name already exists and not in interactive terminal. Use --force to overwrite.${NC}"
+            echo -e "${YELLOW}Skipping $hook_name${NC}"
             return
         fi
     fi
