@@ -1,0 +1,217 @@
+# OpenAPI Template for TodoistIA
+# Copy this as a starting point for server/src/main/resources/openapi/documentation.yaml
+# Every endpoint and DTO must be documented here.
+
+openapi: 3.1.0
+info:
+  title: TodoistIA API
+  version: 1.0.0
+  description: REST API for TodoistIA task management
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/v1/tasks:
+    get:
+      summary: List tasks
+      operationId: listTasks
+      tags: [Tasks]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, completed] }
+        - name: priority
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 4 }
+        - name: sort
+          in: query
+          description: "Comma-separated fields, prefix with - for descending (e.g. -created_at,priority)"
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated list of tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+
+    post:
+      summary: Create a task
+      operationId: createTask
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSingleResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/v1/tasks/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string }
+
+    get:
+      summary: Get a task by ID
+      operationId: getTask
+      tags: [Tasks]
+      responses:
+        "200":
+          description: Task found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSingleResponse"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+    put:
+      summary: Update a task (full replacement)
+      operationId: updateTask
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSingleResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+    delete:
+      summary: Delete a task
+      operationId: deleteTask
+      tags: [Tasks]
+      responses:
+        "204":
+          description: Task deleted
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+components:
+  schemas:
+    # --- Request DTOs ---
+    CreateTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 255 }
+        description: { type: string }
+        due_date: { type: string, format: date-time }
+        priority_level: { type: integer, minimum: 0, maximum: 4, default: 0 }
+        project_id: { type: string }
+
+    UpdateTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 255 }
+        description: { type: string }
+        due_date: { type: string, format: date-time }
+        priority_level: { type: integer, minimum: 0, maximum: 4 }
+        is_completed: { type: boolean }
+
+    # --- Response DTOs ---
+    TaskResponse:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        due_date: { type: string, format: date-time }
+        priority_level: { type: integer }
+        is_completed: { type: boolean }
+        project_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # --- Wrapped Responses ---
+    TaskSingleResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/TaskResponse"
+
+    TaskListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResponse"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # --- Shared Components ---
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        page_size: { type: integer }
+        total_count: { type: integer }
+        has_next: { type: boolean }
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+
+    FieldError:
+      type: object
+      properties:
+        field: { type: string }
+        message: { type: string }
