@@ -1,0 +1,61 @@
+name: "Epic"
+description: "A high-level initiative that groups related user stories. Epics are never closed — they track ongoing progress."
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Epic Template
+        Epics represent large initiatives that span multiple user stories and tasks.
+        **Epics are never closed** — they remain open as a living index of all related work.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: "What is the principal goal of this epic? What problem does it solve or what value does it deliver?"
+      placeholder: "e.g., Implement a complete task management system with CRUD operations, synchronization, and offline support."
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "Provide a detailed description of the epic scope, context, and expected outcome."
+      placeholder: "Describe the initiative, why it matters, and what success looks like."
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-stories
+    attributes:
+      label: User Stories
+      description: "List all user stories that belong to this epic. Update this list as new stories are created."
+      value: |
+        <!-- Add user stories as they are created. Use task list format so progress is tracked automatically. -->
+        - [ ] #issue_number — Story title
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "What conditions must be met for this epic to be considered complete?"
+      placeholder: |
+        - [ ] All user stories are implemented and closed
+        - [ ] Test coverage meets 80%+ threshold
+        - [ ] Documentation is up to date
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: "Any architectural decisions, constraints, dependencies, or references."
+      placeholder: "Links to design docs, API specs, or related epics."
+    validations:
+      required: false

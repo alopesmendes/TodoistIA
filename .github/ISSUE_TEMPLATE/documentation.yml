@@ -1,0 +1,69 @@
+name: "Documentation / Chore"
+description: "Documentation, articles, wiki content, or maintenance chores."
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Documentation / Chore Template
+        Use this for writing documentation, articles, wiki pages, or performing maintenance chores (dependency updates, cleanup, config changes).
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: "What kind of work is this?"
+      options:
+        - "technical-docs — Architecture, modules, data flows, developer-facing docs"
+        - "functional-docs — Business rules, user stories, DDD glossary, team-facing docs"
+        - "article — Blog post, tutorial, community content"
+        - "wiki — GitHub wiki page creation or update"
+        - "chore — Dependency update, cleanup, config, maintenance"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "Describe what needs to be documented or what chore needs to be performed."
+      placeholder: "e.g., Document the authentication flow architecture and deploy it to the GitHub wiki."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope & Deliverables
+      description: "What files, pages, or sections will be created or updated?"
+      placeholder: |
+        - Create `docs/technical/authentication.md`
+        - Update GitHub wiki: Authentication page
+        - Add Mermaid architecture diagram
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: "Link to related issues, PRs, code, or external resources."
+      placeholder: |
+        - Related PR: #issue_number
+        - Code: `server/src/main/kotlin/...`
+        - External: https://...
+    validations:
+      required: false
+
+  - type: textarea
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: "What must be true for this to be considered complete?"
+      value: |
+        - [ ] Content written and reviewed
+        - [ ] Deployed to target (repo docs / GitHub wiki)
+        - [ ] Links verified
+    validations:
+      required: true

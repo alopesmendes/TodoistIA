@@ -1,0 +1,76 @@
+name: "User Story"
+description: "A user-facing feature or behavior, linked to a parent epic."
+title: "[Story]: "
+labels: ["user-story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## User Story Template
+        User stories describe a feature from the user's perspective and are always linked to a parent epic.
+
+  - type: input
+    id: parent-epic
+    attributes:
+      label: Parent Epic
+      description: "Link to the parent epic issue (e.g., #42)."
+      placeholder: "#issue_number"
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User Story
+      description: "Describe the story in the standard format."
+      value: |
+        **As a** [type of user],
+        **I want** [an action or feature],
+        **So that** [benefit or value].
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "Provide additional context, background, or technical details about this story."
+      placeholder: "Explain the feature in more detail. Include mockups, diagrams, or references if available."
+    validations:
+      required: true
+
+  - type: textarea
+    id: rules
+    attributes:
+      label: Rules & Constraints
+      description: "List the business rules, technical constraints, and invariants that must be respected."
+      placeholder: |
+        - A task title must not be empty
+        - A user can only have one active session at a time
+        - API responses must follow the standard envelope format
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: "Define the conditions that must be met for this story to be considered done."
+      value: |
+        - [ ] Criteria 1
+        - [ ] Criteria 2
+        - [ ] Unit tests written (80%+ coverage on business logic)
+        - [ ] Code reviewed
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks Breakdown
+      description: "Break this story into implementation tasks if known."
+      value: |
+        <!-- Link to task issues as they are created -->
+        - [ ] #issue_number — Task description
+    validations:
+      required: false
