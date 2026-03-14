@@ -10,7 +10,8 @@ Slash commands are user-invocable prompts triggered with `/command-name` in the 
 | `/build-fix`      | Diagnose and fix Gradle build errors                                     |
 | `/code-review`    | Review code against project standards                                    |
 | `/test-coverage`  | Analyze Kover coverage, fill gaps to 80%+                                |
-| `/update-docs`    | Update technical, functional, or article docs                            |
+| `/docs`           | Write or update a doc file — create new or reshape existing (clean/easier/detailed/custom) |
+| `/update-docs`    | Structural doc operations: insert, delete, or correct across all axes    |
 | `/plan`           | Plan implementation for a complex feature                                |
 | `/verify`         | Verify code at local, feature, or project level                          |
 | `/checkpoint`     | Save progress snapshot                                                   |

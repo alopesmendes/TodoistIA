@@ -20,29 +20,31 @@ Technical docs target **future developers** joining or working on the project. T
 
 1. **Explore** — Use Glob and Grep to discover actual file structure, entry points, and module boundaries. Never assume paths.
 2. **Analyze** — Identify frameworks, patterns, dependencies, and data flows from the real code.
-3. **Diagram** — Create Mermaid diagrams for architecture, class relationships, sequences, or database schema.
+3. **Diagram** — Invoke the `mermaid-diagram` skill to evaluate whether a diagram is warranted, select the right type, and delegate production to the `diagram-architect` agent. Do not create Mermaid diagrams inline — always go through the `mermaid-diagram` skill.
 4. **Reference** — Link only to file paths that actually exist in the codebase.
 5. **Timestamp** — Every document gets `Last Updated: YYYY-MM-DD`.
 
 ## Diagram Standards (Mermaid)
 
-Use the appropriate diagram type:
+All diagrams are produced through the `mermaid-diagram` skill, which enforces the formatting rules in `.claude/rules/mermaid-format.md` and delegates production to the `diagram-architect` agent.
 
-```mermaid
-graph TD
-    A[Entry Point] --> B[Module]
-    B --> C[Service]
-    C --> D[(Database)]
-```
+When you reach the diagram step, pass the `mermaid-diagram` skill:
+- The subject (what needs to be visualized)
+- The actors or entities involved
+- The relationships between them
+- Which architectural layer(s) are in scope
 
-| Diagram type      | Use for                                  |
-|-------------------|------------------------------------------|
-| `graph TD`        | Architecture and component relationships |
-| `sequenceDiagram` | API calls and data flows                 |
-| `classDiagram`    | Domain models and class structures       |
-| `erDiagram`       | Database schema                          |
+The skill will select the appropriate type and handle the rest.
 
-Keep diagrams focused — one diagram per concern. Avoid putting everything in one mega-diagram.
+| Diagram type       | Use for                                        |
+|--------------------|------------------------------------------------|
+| `classDiagram`     | Domain models, interfaces, class hierarchy     |
+| `sequenceDiagram`  | API calls, coroutine flows, event sequences    |
+| `stateDiagram-v2`  | Sealed class states, ViewModel state machines  |
+| `erDiagram`        | Database schema, entity relationships          |
+| `graph TD`         | Module dependencies, component relationships   |
+
+Keep diagrams focused — one diagram per concern. The `mermaid-diagram` skill will split large diagrams into sub-diagrams automatically.
 
 ## Output Structure
 
