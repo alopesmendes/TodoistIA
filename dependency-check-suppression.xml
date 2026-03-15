@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!--
+        Add suppression entries here for false-positive CVEs.
+
+        HOW TO ADD A SUPPRESSION:
+        1. Run ./gradlew dependencyCheckAnalyze to see the report in build/reports/
+        2. Identify false positives (CVEs that don't apply to this project's usage)
+        3. Add an entry below with the CVE ID, the file pattern, and a note explaining why
+
+        EXAMPLE (remove the comment markers to activate):
+
+        <suppress>
+            <notes><![CDATA[
+                False positive: CVE-XXXX-YYYY affects the C library, not the JVM binding used here.
+                Reviewed on 2026-03-15 — not exploitable in this context.
+            ]]></notes>
+            <cve>CVE-XXXX-YYYY</cve>
+        </suppress>
+    -->
+</suppressions>
