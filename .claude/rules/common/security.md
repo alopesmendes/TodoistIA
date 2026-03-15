@@ -19,6 +19,12 @@ Before ANY commit:
 - Validate that required secrets are present at startup
 - Rotate any secrets that may have been exposed
 
+## Environment Files
+
+- `.env.*` files (`.env.dev`, `.env.test`, `.env.staging`, `.env.prod`) MUST be listed in `.gitignore` — they hold real secrets
+- NEVER commit a `.env.*` file even if it "looks safe" — treat the pattern as an absolute rule
+- Use `APP_ENV` to select the active environment; default to `dev` locally
+
 ## Security Response Protocol
 
 If security issue found:

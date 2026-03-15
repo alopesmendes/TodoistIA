@@ -1,0 +1,87 @@
+name: dependency-audit
+
+on:
+  pull_request:
+    branches: [ "master", "develop", "staging" ]
+  push:
+    branches: [ "master", "develop", "staging" ]
+  schedule:
+    # Every Sunday at 02:00 UTC to catch newly disclosed CVEs
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
+
+      - name: Cache NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: nvd-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            nvd-${{ runner.os }}-
+
+      - name: Run OWASP Dependency Check
+        run: ./gradlew dependencyCheckAnalyze --no-daemon
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-report-${{ github.run_number }}
+          path: build/reports/
+          retention-days: 30
+
+  freshness:
+    name: Dependency Freshness Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on schedule or manual dispatch — not blocking PRs
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run dependency updates check
+        run: ./gradlew dependencyUpdates --no-daemon
+
+      - name: Upload freshness report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-freshness-report-${{ github.run_number }}
+          path: build/reports/dependencyUpdates/
+          retention-days: 30
