@@ -1,3 +1,4 @@
+import org.jlleitschuh.gradle.ktlint.reporter.ReporterType
 import java.util.Properties
 
 /**
@@ -39,10 +40,7 @@ fun loadEnv(): Map<String, String> {
 val envVars: Map<String, String> = loadEnv()
 
 /** Resolves a config value: system env → .env file → [default]. */
-fun env(
-    key: String,
-    default: String = "",
-): String = System.getenv(key) ?: envVars[key] ?: default
+fun env(key: String, default: String = ""): String = System.getenv(key) ?: envVars[key] ?: default
 
 plugins {
     // this is necessary to avoid the plugins to be loaded multiple times
@@ -58,6 +56,7 @@ plugins {
     alias(libs.plugins.ktor) apply false
     alias(libs.plugins.owaspDependencyCheck)
     alias(libs.plugins.benManesVersions)
+    alias(libs.plugins.ktlint)
 }
 
 // ── OWASP Dependency Check ──────────────────────────────────────────────────
@@ -73,10 +72,10 @@ dependencyCheck {
     analyzers {
         // Disable analyzers not relevant to JVM/KMP projects to speed up scans
         assemblyEnabled = false
-        nodeEnabled = false
-        nodeAuditEnabled = false
         nuspecEnabled = false
         nugetconfEnabled = false
+        setNodeEnabled(false)
+        nodeAudit { enabled = false }
         retirejs { enabled = false }
     }
 }
@@ -96,6 +95,40 @@ tasks.withType<com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
     outputFormatter = "json,html"
     outputDir = "build/reports/dependencyUpdates"
     reportfileName = "dependency-updates"
+}
+
+// ── ktlint ───────────────────────────────────────────────────────────────────
+allprojects {
+    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+
+    configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
+        version.set("1.6.0")
+        android.set(true)
+        outputToConsole.set(true)
+        ignoreFailures.set(false)
+        enableExperimentalRules.set(true)
+        reporters {
+            reporter(ReporterType.HTML)
+            reporter(ReporterType.JSON)
+            reporter(ReporterType.SARIF)
+        }
+        filter {
+            exclude("**/build/**")
+            exclude("**/generated/**")
+        }
+    }
+}
+
+tasks.register("lintCheck") {
+    group = "verification"
+    description = "Runs ktlint check on all modules"
+    dependsOn(subprojects.map { "${it.path}:ktlintCheck" })
+}
+
+tasks.register("lintFormat") {
+    group = "formatting"
+    description = "Runs ktlint format on all modules"
+    dependsOn(subprojects.map { "${it.path}:ktlintFormat" })
 }
 
 tasks.register<Exec>("installGitHooks") {

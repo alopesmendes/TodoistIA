@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:compose:modifier-missing-check")
+
 package com.ailtontech.todoistia
 
 import androidx.compose.animation.AnimatedVisibility
@@ -15,12 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import org.jetbrains.compose.resources.painterResource
-
 import todoistia.composeapp.generated.resources.Res
 import todoistia.composeapp.generated.resources.compose_multiplatform
 
 @Composable
-@Preview
 fun App() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
@@ -46,4 +46,10 @@ fun App() {
             }
         }
     }
+}
+
+@Composable
+@Preview
+private fun AppPreview() {
+    App()
 }

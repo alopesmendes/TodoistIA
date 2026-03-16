@@ -8,7 +8,7 @@ group = "com.ailtontech.todoistia"
 version = "1.0.0"
 application {
     mainClass.set("com.ailtontech.todoistia.ApplicationKt")
-    
+
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
 }
