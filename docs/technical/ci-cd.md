@@ -1,10 +1,10 @@
 # CI/CD Pipeline
 
-**Last Updated:** 2026-03-16 (git hooks added)
+**Last Updated:** 2026-03-21
 
 ## Overview
 
-Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint first** — if lint fails, the build is skipped. All workflows can also be triggered manually from the GitHub Actions UI.
+Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint** and **code analysis** in parallel — if either fails, the build is skipped. All workflows can also be triggered manually from the GitHub Actions UI.
 
 ---
 
@@ -33,9 +33,44 @@ A reusable workflow that runs `./gradlew lintCheck` on all modules. It is called
 
 ---
 
+## Code Analysis Workflow
+
+**File:** `.github/workflows/code-analysis.yml`
+
+A reusable workflow called by all four principal CI workflows in parallel with lint. It runs two independent jobs:
+
+**Triggers:** `workflow_call`, `workflow_dispatch`
+**Permissions required:** `contents: read`, `security-events: write`
+
+### Job 1 — Detekt
+
+Runs `./gradlew detektAll --no-daemon --continue` to analyze all modules statically. Uploads all SARIF + HTML reports as a single `detekt-reports` artifact (retained 14 days) and uploads SARIF to the **GitHub Security tab**.
+
+### Job 2 — CodeQL
+
+Initializes CodeQL for `java-kotlin`, uses autobuild to compile the project, then runs `security-extended` queries. Results appear in the **GitHub Security tab** under Code Scanning.
+
+### Run detekt locally
+
+```bash
+# Analyze all modules
+./gradlew detektAll
+
+# Analyze a single module
+./gradlew :server:detekt
+./gradlew :composeApp:detekt
+
+# Generate a baseline to grandfather existing violations
+./gradlew detektBaseline
+```
+
+Reports are written to `<module>/build/reports/detekt/` as HTML and SARIF files.
+
+---
+
 ## Principal CI Workflows
 
-All four follow the same pattern: lint runs first, then the platform build.
+All four follow the same pattern: lint and code analysis run in parallel, then the platform build.
 
 | Workflow | File             | Build command                           | Runner          | Timeout |
 |----------|------------------|-----------------------------------------|-----------------|---------|
@@ -47,6 +82,14 @@ All four follow the same pattern: lint runs first, then the platform build.
 **Triggers:** `pull_request` to `master`, `develop`, or `staging` · `workflow_dispatch`
 
 Mobile uses `macos-latest` to support future iOS build steps.
+
+Each workflow's job graph:
+
+```
+lint (reusable)          ─┐
+                           ├─ build (platform-specific)
+code-analysis (reusable) ─┘
+```
 
 ---
 
@@ -61,6 +104,7 @@ graph TD
     classDef trigger fill:#fef9c3,stroke:#ca8a04,color:#713f12
     classDef reusable fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
     classDef build fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef analysis fill:#f3e8ff,stroke:#7c3aed,color:#3b0764
 
     PR["PR / workflow_dispatch"]:::trigger
 
@@ -69,18 +113,59 @@ graph TD
     PR --> Server["ci-server.yml"]:::build
     PR --> Webapp["ci-webapp.yml"]:::build
 
-    Mobile --> Lint["lint.yml -> (reusable)"]:::reusable
+    Mobile --> Lint["lint.yml (reusable)"]:::reusable
     Desktop --> Lint
     Server --> Lint
     Webapp --> Lint
 
-    Lint --> LintCheck["lintCheck task -> (ktlint all modules)"]:::reusable
+    Mobile --> CA["code-analysis.yml (reusable)"]:::analysis
+    Desktop --> CA
+    Server --> CA
+    Webapp --> CA
 
-    LintCheck -->|needs lint| BuildMobile["assembleDebug"]:::build
-    LintCheck -->|needs lint| BuildDesktop["jvmJar"]:::build
-    LintCheck -->|needs lint| BuildServer["server:build"]:::build
-    LintCheck -->|needs lint| BuildWasm["wasmJsBrowserDistribution"]:::build
+    CA --> Detekt["detekt (all modules)"]:::analysis
+    CA --> CodeQL["codeql (java-kotlin)"]:::analysis
+
+    Lint --> BuildMobile["assembleDebug"]:::build
+    CA --> BuildMobile
+    Lint --> BuildDesktop["jvmJar"]:::build
+    CA --> BuildDesktop
+    Lint --> BuildServer["server:build"]:::build
+    CA --> BuildServer
+    Lint --> BuildWasm["wasmJsBrowserDistribution"]:::build
+    CA --> BuildWasm
 ```
+
+---
+
+## Detekt Configuration
+
+Detekt enforces Kotlin static analysis rules across all modules. Rules are **layered**: every module uses the base config; `composeApp` and `androidApp` additionally apply Compose-specific rules.
+
+| Config file                   | Applies to                          |
+|-------------------------------|-------------------------------------|
+| `.detekt/detekt-base.yml`     | All modules                         |
+| `.detekt/detekt-compose.yml`  | `composeApp`, `androidApp` only     |
+
+### What detekt checks (base rules)
+
+- **Complexity** — method length, cyclomatic complexity, parameter count, nesting depth
+- **Coroutines** — `GlobalCoroutineUsage`, `SuspendFunSwallowedCancellation`
+- **Exceptions** — swallowed exceptions, generic catch, missing messages
+- **Performance** — spread operator misuse
+- **Potential bugs** — double mutability, unsafe null operators, platform types
+- **Style** — forbidden comments (`FIXME:`, `STOPSHIP:`), magic numbers, return count
+
+Formatting is not part of detekt — ktlint owns formatting.
+
+### Compose rules (composeApp + androidApp)
+
+Uses `io.nlopez.compose.rules:detekt`. Key rules:
+- `ModifierMissing` — top-level Composables must accept a `Modifier`
+- `ViewModelForwarding` — don't pass ViewModels down the tree
+- `RememberMissing` — expensive objects must be wrapped in `remember`
+- `PreviewPublic` — Preview Composables should be `private` or `internal`
+- `MultipleEmitters` — a Composable shouldn't emit more than one layout root
 
 ---
 
@@ -136,27 +221,37 @@ This avoids wasting CI minutes on outdated commits.
 
 ## Troubleshooting
 
-| Symptom                              | Cause                          | Fix                                   |
-|--------------------------------------|--------------------------------|---------------------------------------|
-| Lint job fails                       | Style violations               | Run `./gradlew lintFormat` locally    |
-| Build job doesn't start              | Lint failed                    | Fix lint errors first                 |
-| Compose rule violation               | Missing `Modifier` param, etc. | See Compose rules above               |
-| Slow first run                       | Empty Gradle cache             | Second run will use the cache         |
-| Mobile build fails on `macos-latest` | iOS toolchain issue            | Check Xcode/KMP version compatibility |
+| Symptom                              | Cause                               | Fix                                                               |
+|--------------------------------------|-------------------------------------|-------------------------------------------------------------------|
+| Lint job fails                       | Style violations                    | Run `./gradlew lintFormat` locally                                |
+| Code analysis job fails              | detekt violations                   | Run `./gradlew detektAll` locally; fix reported issues            |
+| Too many detekt violations on first run | Existing code not yet compliant  | Generate a baseline: `./gradlew detektBaseline`                   |
+| CodeQL build step fails              | JVM compilation error               | Fix compile errors in `:server`, `:shared`, or `:composeApp:jvm`  |
+| Build job doesn't start              | Lint or code-analysis failed        | Fix both before build proceeds                                    |
+| Compose rule violation               | Missing `Modifier` param, etc.      | See Compose rules above                                           |
+| Slow first run                       | Empty Gradle cache                  | Second run will use the cache                                     |
+| Mobile build fails on `macos-latest` | iOS toolchain issue                 | Check Xcode/KMP version compatibility                             |
+| SARIF not appearing in Security tab  | GitHub Advanced Security not enabled | Enable it in repo Settings → Security → Code scanning            |
 
 ---
 
 ## Adding a New Workflow
 
 1. Create `.github/workflows/your-workflow.yml`
-2. Add lint as a gating job:
+2. Add lint and code-analysis as gating jobs:
    ```yaml
    jobs:
      lint:
        uses: ./.github/workflows/lint.yml
 
+     code-analysis:
+       uses: ./.github/workflows/code-analysis.yml
+       permissions:
+         contents: read
+         security-events: write
+
      build:
-       needs: [lint]
+       needs: [lint, code-analysis]
        ...
    ```
 3. Use the same `concurrency` block and trigger branches as existing workflows
