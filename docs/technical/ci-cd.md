@@ -4,7 +4,101 @@
 
 ## Overview
 
-Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint** and **code analysis** in parallel — if either fails, the build is skipped. All workflows can also be triggered manually from the GitHub Actions UI.
+Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint** and **dependency audit** in parallel, then builds, then runs **code analysis**. All workflows support manual dispatch with configurable inputs (environment, platform selection, test/deploy toggles).
+
+---
+
+## Pipeline Order
+
+All four principal workflows follow the same sequential pipeline:
+
+```
+lint ──┐
+       ├── build ── [tests / coverage] ── code-analysis ── [deploy]
+audit ─┘
+```
+
+| Stage            | Status          | Description                                               |
+|------------------|-----------------|-----------------------------------------------------------|
+| Lint             | Implemented     | ktlint check via reusable workflow                        |
+| Audit            | Implemented     | OWASP dependency vulnerability scan via reusable workflow |
+| Build            | Implemented     | Platform-specific Gradle build                            |
+| Tests / Coverage | Not implemented | Placeholder — skipped for now                             |
+| Code Analysis    | Implemented     | detekt + CodeQL via reusable workflow                     |
+| Deploy           | Not implemented | Placeholder — skipped for now                             |
+
+---
+
+## Triggers
+
+All principal workflows support two trigger modes:
+
+### PR trigger (automatic)
+
+Fires on every `pull_request` targeting `master`, `develop`, or `staging`. All inputs use their default values — every platform builds, tests are not skipped, nothing is deployed.
+
+### Manual trigger (`workflow_dispatch`)
+
+Launch from the GitHub Actions UI with configurable inputs. The branch selector is built into GitHub's UI — no custom branch input is needed.
+
+---
+
+## Workflow Inputs
+
+### ci-mobile.yml
+
+| Input            | Type    | Default       | Description                                                |
+|------------------|---------|---------------|------------------------------------------------------------|
+| `environment`    | choice  | `development` | Target environment: development, test, staging, production |
+| `build_android`  | boolean | `true`        | Build Android app                                          |
+| `build_ios`      | boolean | `true`        | Build iOS app                                              |
+| `skip_tests`     | boolean | `false`       | Skip test execution (not implemented yet)                  |
+| `deploy_android` | boolean | `false`       | Deploy Android (not implemented yet)                       |
+| `deploy_ios`     | boolean | `false`       | Deploy iOS (not implemented yet)                           |
+
+### ci-desktop.yml / ci-webapp.yml / ci-server.yml
+
+| Input         | Type    | Default       | Description                                                |
+|---------------|---------|---------------|------------------------------------------------------------|
+| `environment` | choice  | `development` | Target environment: development, test, staging, production |
+| `skip_tests`  | boolean | `false`       | Skip test execution (not implemented yet)                  |
+| `deploy`      | boolean | `false`       | Deploy (not implemented yet)                               |
+
+---
+
+## Conditional Platform Builds (ci-mobile)
+
+The mobile workflow splits the build into two independent jobs (`build-android`, `build-ios`), each gated by its toggle:
+
+```yaml
+if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
+```
+
+This means:
+- **PR trigger** — both platforms always build (inputs are empty, condition is true)
+- **Manual trigger** — only selected platforms build
+
+Code analysis runs after builds, tolerating skipped platforms:
+
+```yaml
+needs: [build-android, build-ios]
+if: >-
+  !cancelled() &&
+  (needs.build-android.result == 'success' || needs.build-android.result == 'skipped') &&
+  (needs.build-ios.result == 'success' || needs.build-ios.result == 'skipped')
+```
+
+---
+
+## Reusable Workflows
+
+Three reusable workflows are called by all principal workflows:
+
+| Workflow      | File                   | Trigger         | Purpose                                       |
+|---------------|------------------------|-----------------|-----------------------------------------------|
+| Lint          | `lint.yml`             | `workflow_call` | `./gradlew lintCheck` — ktlint on all modules |
+| Audit         | `dependency-audit.yml` | `workflow_call` | OWASP Dependency Check vulnerability scan     |
+| Code Analysis | `code-analysis.yml`    | `workflow_call` | detekt + CodeQL static analysis               |
 
 ---
 
@@ -12,9 +106,8 @@ Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, 
 
 **File:** `.github/workflows/lint.yml`
 
-A reusable workflow that runs `./gradlew lintCheck` on all modules. It is called by all four principal workflows as their first job.
+Runs `./gradlew lintCheck` on all modules. Called by all four principal workflows as their first job (parallel with audit).
 
-**Triggers:** `workflow_call` (called by other workflows), `workflow_dispatch` (manual)
 **Runner:** `ubuntu-latest`, JDK 17, timeout 15 min
 
 ### Run lint locally
@@ -33,13 +126,25 @@ A reusable workflow that runs `./gradlew lintCheck` on all modules. It is called
 
 ---
 
+## Dependency Audit Workflow
+
+**File:** `.github/workflows/dependency-audit.yml`
+
+Runs OWASP Dependency Check (`./gradlew dependencyCheckAnalyze`) to scan for known CVEs in project dependencies. Uploads reports as artifacts (retained 30 days). Also runs independently on a weekly schedule (Sundays 02:00 UTC) and on pushes to main branches.
+
+The `freshness` job (dependency staleness report) only runs on schedule or manual dispatch — it does not block PRs.
+
+**Runner:** `ubuntu-latest`, JDK 17, timeout 30 min
+**Secret required:** `NVD_API_KEY` (passed via `secrets: inherit`)
+
+---
+
 ## Code Analysis Workflow
 
 **File:** `.github/workflows/code-analysis.yml`
 
-A reusable workflow called by all four principal CI workflows in parallel with lint. It runs two independent jobs:
+Runs two independent jobs:
 
-**Triggers:** `workflow_call`, `workflow_dispatch`
 **Permissions required:** `contents: read`, `security-events: write`
 
 ### Job 1 — Detekt
@@ -70,25 +175,32 @@ Reports are written to `<module>/build/reports/detekt/` as HTML and SARIF files.
 
 ## Principal CI Workflows
 
-All four follow the same pattern: lint and code analysis run in parallel, then the platform build.
+| Workflow         | File             | Build command                           | Runner          | Timeout |
+|------------------|------------------|-----------------------------------------|-----------------|---------|
+| Mobile (Android) | `ci-mobile.yml`  | `:composeApp:assembleDebug`             | `macos-latest`  | 30 min  |
+| Mobile (iOS)     | `ci-mobile.yml`  | Not implemented yet                     | `macos-latest`  | 30 min  |
+| Desktop          | `ci-desktop.yml` | `:composeApp:jvmJar`                    | `ubuntu-latest` | 20 min  |
+| Server           | `ci-server.yml`  | `:server:build`                         | `ubuntu-latest` | 20 min  |
+| Webapp           | `ci-webapp.yml`  | `:composeApp:wasmJsBrowserDistribution` | `ubuntu-latest` | 20 min  |
 
-| Workflow | File             | Build command                           | Runner          | Timeout |
-|----------|------------------|-----------------------------------------|-----------------|---------|
-| Mobile   | `ci-mobile.yml`  | `:composeApp:assembleDebug`             | `macos-latest`  | 30 min  |
-| Desktop  | `ci-desktop.yml` | `:composeApp:jvmJar`                    | `ubuntu-latest` | 20 min  |
-| Server   | `ci-server.yml`  | `:server:build`                         | `ubuntu-latest` | 20 min  |
-| Webapp   | `ci-webapp.yml`  | `:composeApp:wasmJsBrowserDistribution` | `ubuntu-latest` | 20 min  |
+Mobile uses `macos-latest` to support iOS build steps (currently placeholder).
 
-**Triggers:** `pull_request` to `master`, `develop`, or `staging` · `workflow_dispatch`
-
-Mobile uses `macos-latest` to support future iOS build steps.
-
-Each workflow's job graph:
+### Job graph (desktop / webapp / server)
 
 ```
-lint (reusable)          ─┐
-                           ├─ build (platform-specific)
-code-analysis (reusable) ─┘
+lint ──┐
+       ├── build ── [tests/coverage] ── code-analysis ── [deploy]
+audit ─┘
+```
+
+### Job graph (mobile)
+
+```
+lint ──┐
+       ├── build-android ──┐
+audit ─┘                   ├── [tests/coverage] ── code-analysis ── [deploy]
+       ├── build-ios ──────┘
+       └── (parallel)
 ```
 
 ---
@@ -105,6 +217,7 @@ graph TD
     classDef reusable fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
     classDef build fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef analysis fill:#f3e8ff,stroke:#7c3aed,color:#3b0764
+    classDef placeholder fill:#f1f5f9,stroke:#94a3b8,color:#475569
 
     PR["PR / workflow_dispatch"]:::trigger
 
@@ -113,27 +226,39 @@ graph TD
     PR --> Server["ci-server.yml"]:::build
     PR --> Webapp["ci-webapp.yml"]:::build
 
-    Mobile --> Lint["lint.yml (reusable)"]:::reusable
-    Desktop --> Lint
-    Server --> Lint
-    Webapp --> Lint
+    subgraph "Reusable Workflows (parallel)"
+        Lint["lint.yml"]:::reusable
+        Audit["dependency-audit.yml"]:::reusable
+    end
 
-    Mobile --> CA["code-analysis.yml (reusable)"]:::analysis
-    Desktop --> CA
-    Server --> CA
-    Webapp --> CA
+    Mobile --> Lint
+    Mobile --> Audit
+    Desktop --> Lint
+    Desktop --> Audit
+    Server --> Lint
+    Server --> Audit
+    Webapp --> Lint
+    Webapp --> Audit
+
+    Lint --> BuildAndroid["assembleDebug"]:::build
+    Audit --> BuildAndroid
+    Lint --> BuildIOS["iOS (placeholder)"]:::placeholder
+    Audit --> BuildIOS
+    Lint --> BuildDesktop["jvmJar"]:::build
+    Audit --> BuildDesktop
+    Lint --> BuildServer["server:build"]:::build
+    Audit --> BuildServer
+    Lint --> BuildWasm["wasmJsBrowserDistribution"]:::build
+    Audit --> BuildWasm
+
+    BuildAndroid --> CA["code-analysis.yml"]:::analysis
+    BuildIOS --> CA
+    BuildDesktop --> CA
+    BuildServer --> CA
+    BuildWasm --> CA
 
     CA --> Detekt["detekt (all modules)"]:::analysis
     CA --> CodeQL["codeql (java-kotlin)"]:::analysis
-
-    Lint --> BuildMobile["assembleDebug"]:::build
-    CA --> BuildMobile
-    Lint --> BuildDesktop["jvmJar"]:::build
-    CA --> BuildDesktop
-    Lint --> BuildServer["server:build"]:::build
-    CA --> BuildServer
-    Lint --> BuildWasm["wasmJsBrowserDistribution"]:::build
-    CA --> BuildWasm
 ```
 
 ---
@@ -221,40 +346,65 @@ This avoids wasting CI minutes on outdated commits.
 
 ## Troubleshooting
 
-| Symptom                              | Cause                               | Fix                                                               |
-|--------------------------------------|-------------------------------------|-------------------------------------------------------------------|
-| Lint job fails                       | Style violations                    | Run `./gradlew lintFormat` locally                                |
-| Code analysis job fails              | detekt violations                   | Run `./gradlew detektAll` locally; fix reported issues            |
-| Too many detekt violations on first run | Existing code not yet compliant  | Generate a baseline: `./gradlew detektBaseline`                   |
-| CodeQL build step fails              | JVM compilation error               | Fix compile errors in `:server`, `:shared`, or `:composeApp:jvm`  |
-| Build job doesn't start              | Lint or code-analysis failed        | Fix both before build proceeds                                    |
-| Compose rule violation               | Missing `Modifier` param, etc.      | See Compose rules above                                           |
-| Slow first run                       | Empty Gradle cache                  | Second run will use the cache                                     |
-| Mobile build fails on `macos-latest` | iOS toolchain issue                 | Check Xcode/KMP version compatibility                             |
-| SARIF not appearing in Security tab  | GitHub Advanced Security not enabled | Enable it in repo Settings → Security → Code scanning            |
+| Symptom                                 | Cause                                | Fix                                                              |
+|-----------------------------------------|--------------------------------------|------------------------------------------------------------------|
+| Lint job fails                          | Style violations                     | Run `./gradlew lintFormat` locally                               |
+| Code analysis job fails                 | detekt violations                    | Run `./gradlew detektAll` locally; fix reported issues           |
+| Too many detekt violations on first run | Existing code not yet compliant      | Generate a baseline: `./gradlew detektBaseline`                  |
+| CodeQL build step fails                 | JVM compilation error                | Fix compile errors in `:server`, `:shared`, or `:composeApp:jvm` |
+| Build job doesn't start                 | Lint or audit failed                 | Fix both before build proceeds                                   |
+| Code analysis doesn't start             | Build failed                         | Fix the build first — code analysis runs after build             |
+| Compose rule violation                  | Missing `Modifier` param, etc.       | See Compose rules above                                          |
+| Slow first run                          | Empty Gradle cache                   | Second run will use the cache                                    |
+| Mobile build fails on `macos-latest`    | iOS toolchain issue                  | Check Xcode/KMP version compatibility                            |
+| SARIF not appearing in Security tab     | GitHub Advanced Security not enabled | Enable it in repo Settings → Security → Code scanning            |
+| Audit fails with NVD error              | Missing or expired `NVD_API_KEY`     | Add/renew the secret in repo Settings → Secrets                  |
 
 ---
 
 ## Adding a New Workflow
 
 1. Create `.github/workflows/your-workflow.yml`
-2. Add lint and code-analysis as gating jobs:
+2. Add `workflow_dispatch` inputs following the standard pattern:
+   ```yaml
+   on:
+     pull_request:
+       branches: ["master", "develop", "staging"]
+     workflow_dispatch:
+       inputs:
+         environment:
+           type: choice
+           options: [development, test, staging, production]
+           default: development
+         skip_tests:
+           type: boolean
+           default: false
+         deploy:
+           type: boolean
+           default: false
+   ```
+3. Add lint and audit as parallel gating jobs, then build, then code-analysis:
    ```yaml
    jobs:
      lint:
        uses: ./.github/workflows/lint.yml
 
+     audit:
+       uses: ./.github/workflows/dependency-audit.yml
+       secrets: inherit
+
+     build:
+       needs: [lint, audit]
+       ...
+
      code-analysis:
+       needs: [build]
        uses: ./.github/workflows/code-analysis.yml
        permissions:
          contents: read
          security-events: write
-
-     build:
-       needs: [lint, code-analysis]
-       ...
    ```
-3. Use the same `concurrency` block and trigger branches as existing workflows
+4. Use the same `concurrency` block and trigger branches as existing workflows
 
 ---
 

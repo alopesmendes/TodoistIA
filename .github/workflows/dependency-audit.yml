@@ -1,6 +1,7 @@
 name: dependency-audit
 
 on:
+  workflow_call:
   pull_request:
     branches: [ "master", "develop", "staging" ]
   push:
@@ -8,7 +9,6 @@ on:
   schedule:
     # Every Sunday at 02:00 UTC to catch newly disclosed CVEs
     - cron: "0 2 * * 0"
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -60,8 +60,8 @@ jobs:
     name: Dependency Freshness Report
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only run on schedule or manual dispatch — not blocking PRs
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Only run on schedule — not blocking PRs or CI calls
+    if: github.event_name == 'schedule'
 
     steps:
       - name: Checkout
