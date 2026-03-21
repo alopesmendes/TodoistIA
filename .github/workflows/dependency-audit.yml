@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dependency-audit-report-${{ github.run_number }}
           path: build/reports/
@@ -80,7 +80,7 @@ jobs:
         run: ./gradlew dependencyUpdates --no-daemon
 
       - name: Upload freshness report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dependency-freshness-report-${{ github.run_number }}
           path: build/reports/dependencyUpdates/
