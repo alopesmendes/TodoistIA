@@ -14,9 +14,16 @@ jobs:
     name: Lint
     uses: ./.github/workflows/lint.yml
 
+  code-analysis:
+    name: Code Analysis
+    uses: ./.github/workflows/code-analysis.yml
+    permissions:
+      contents: read
+      security-events: write
+
   build:
     name: Build Webapp
-    needs: [lint]
+    needs: [lint, code-analysis]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

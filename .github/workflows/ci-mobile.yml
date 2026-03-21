@@ -14,9 +14,16 @@ jobs:
     name: Lint
     uses: ./.github/workflows/lint.yml
 
+  code-analysis:
+    name: Code Analysis
+    uses: ./.github/workflows/code-analysis.yml
+    permissions:
+      contents: read
+      security-events: write
+
   build:
     name: Build Mobile
-    needs: [lint]
+    needs: [lint, code-analysis]
     runs-on: macos-latest
     timeout-minutes: 30
 

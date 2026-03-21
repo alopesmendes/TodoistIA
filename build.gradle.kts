@@ -57,6 +57,7 @@ plugins {
     alias(libs.plugins.owaspDependencyCheck)
     alias(libs.plugins.benManesVersions)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.detekt) apply false
 }
 
 // ── OWASP Dependency Check ──────────────────────────────────────────────────
@@ -129,6 +130,63 @@ tasks.register("lintFormat") {
     group = "formatting"
     description = "Runs ktlint format on all modules"
     dependsOn(subprojects.map { "${it.path}:ktlintFormat" })
+}
+
+// ── detekt (static analysis) ─────────────────────────────────────────────────
+val detektBaseConfig = file(".detekt/detekt-base.yml")
+val detektComposeConfig = file(".detekt/detekt-compose.yml")
+
+val composeModules = setOf("composeApp", "androidApp")
+
+allprojects {
+    apply(plugin = "io.gitlab.arturbosch.detekt")
+
+    configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
+        buildUponDefaultConfig = true
+        allRules = false
+        parallel = true
+
+        config.setFrom(
+            if (project.name in composeModules) {
+                listOf(detektBaseConfig, detektComposeConfig)
+            } else {
+                listOf(detektBaseConfig)
+            },
+        )
+    }
+
+    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+        reports {
+            html.required.set(true)
+            sarif.required.set(true)
+        }
+    }
+}
+
+subprojects {
+    if (name in composeModules) {
+        val detektComposeRulesVersion = rootProject.extensions
+            .getByType<VersionCatalogsExtension>()
+            .named("libs")
+            .findVersion("detekt-compose-rules")
+            .get()
+            .requiredVersion
+        dependencies {
+            "detektPlugins"("io.nlopez.compose.rules:detekt:$detektComposeRulesVersion")
+        }
+    }
+}
+
+tasks.register("detektAll") {
+    group = "verification"
+    description = "Runs detekt on all modules"
+    dependsOn(subprojects.map { "${it.path}:detekt" })
+}
+
+tasks.register("codeAnalysis") {
+    group = "verification"
+    description = "Runs all static analysis checks (detekt + ktlint)"
+    dependsOn("detektAll", "lintCheck")
 }
 
 tasks.register<Exec>("installGitHooks") {
