@@ -99,8 +99,14 @@ jobs:
         with:
           cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
 
-      - name: Build Desktop
-        run: ./gradlew :composeApp:jvmJar --no-daemon
+      - name: Compile Desktop
+        run: ./gradlew :composeApp:compileKotlinJvm --no-daemon
+        env:
+          APP_ENV: ${{ vars.APP_ENV || 'dev' }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+          SERVER_PORT: ${{ vars.SERVER_PORT }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
 
   # tests / coverage — not implemented yet
 

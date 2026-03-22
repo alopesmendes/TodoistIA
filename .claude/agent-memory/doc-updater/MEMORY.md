@@ -9,22 +9,32 @@
 - `docs/technical/architecture.md` — Module structure and compilation targets
 - `docs/technical/agp9-migration.md` — AGP 8 to 9 migration guide
 
-### Latest Documentation Update (2026-03-16)
-Expanded CI/CD documentation to include Git Hooks section:
+### Latest Documentation Update (2026-03-22)
+Updated CI/CD documentation to reflect compile-only architecture and workflow changes:
 
-#### CI/CD Pipeline (existing)
-1. **Reusable lint workflow** (`.github/workflows/lint.yml`):
-   - Called via `workflow_call` from principal workflows
-   - Runs `./gradlew lintCheck --no-daemon` on ubuntu-latest with JDK 17
-   - 15-minute timeout, concurrency-aware
+#### CI/CD Pipeline (Compile-Only Architecture)
+1. **Pipeline stages**:
+   - Lint + Audit (parallel gating jobs)
+   - Compile (platform-specific, compile-only — NOT full build/packaging)
+   - Code Analysis (detekt + CodeQL)
+   - Tests/Coverage (not implemented yet)
+   - Release/Deploy (not implemented yet)
 
-2. **Four Principal CI Workflows**:
-   - `ci-mobile.yml` — Builds `:composeApp:assembleDebug` on macos-latest
-   - `ci-desktop.yml` — Builds `:composeApp:jvmJar` on ubuntu-latest
-   - `ci-server.yml` — Builds `:server:build` on ubuntu-latest
-   - `ci-webapp.yml` — Builds `:composeApp:wasmJsBrowserDistribution` on ubuntu-latest
+2. **Four Principal CI Workflows** (now compile-only):
+   - `ci-mobile.yml` **Android**: `:androidApp:compileDebugKotlin` on ubuntu-latest (30 min) [was: assembleDebug on macos-latest]
+   - `ci-mobile.yml` **iOS**: `:composeApp:compileKotlinIosSimulatorArm64` on macos-latest (45 min) [was: placeholder]
+   - `ci-desktop.yml`: `:composeApp:compileKotlinJvm` on ubuntu-latest (20 min) [was: jvmJar]
+   - `ci-server.yml`: `:server:classes` on ubuntu-latest (20 min) [was: server:build]
+   - `ci-webapp.yml`: `:composeApp:compileKotlinWasmJs` on ubuntu-latest (20 min) [was: wasmJsBrowserDistribution]
 
-3. **Ktlint Configuration**:
+3. **Key Design Decisions**:
+   - Android now runs on ubuntu-latest (faster, cheaper) instead of macos-latest
+   - iOS stays on macos-latest (Kotlin/Native requirement)
+   - All workflows inject env vars: APP_ENV, NVD_API_KEY, TODOIST_TOKEN, SERVER_PORT, SERVER_HOST
+   - iOS build includes Konan cache (~/.konan) keyed on libs.versions.toml hash
+   - iOS memory: GRADLE_OPTS: "-Xmx4g" (Kotlin/Native is memory-intensive)
+
+4. **Ktlint Configuration** (unchanged):
    - Plugin: `org.jlleitschuh.gradle.ktlint` v12.2.0
    - Root config in `build.gradle.kts` (lines 102-128)
    - Per-file rules in `.editorconfig`

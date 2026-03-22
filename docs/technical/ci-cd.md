@@ -1,10 +1,10 @@
 # CI/CD Pipeline
 
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-22
 
 ## Overview
 
-Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint** and **dependency audit** in parallel, then builds, then runs **code analysis**. All workflows support manual dispatch with configurable inputs (environment, platform selection, test/deploy toggles).
+Every PR triggers four platform-specific CI workflows (Mobile, Desktop, Server, Webapp). Each one runs **lint** and **dependency audit** in parallel, then compiles (compile-only, not full build), then runs **code analysis**. All workflows support manual dispatch with configurable inputs (environment, platform selection, test/deploy toggles).
 
 ---
 
@@ -14,7 +14,7 @@ All four principal workflows follow the same sequential pipeline:
 
 ```
 lint ──┐
-       ├── build ── [tests / coverage] ── code-analysis ── [deploy]
+       ├── compile ── [tests / coverage] ── code-analysis ── [release / deploy]
 audit ─┘
 ```
 
@@ -22,7 +22,7 @@ audit ─┘
 |------------------|-----------------|-----------------------------------------------------------|
 | Lint             | Implemented     | ktlint check via reusable workflow                        |
 | Audit            | Implemented     | OWASP dependency vulnerability scan via reusable workflow |
-| Build            | Implemented     | Platform-specific Gradle build                            |
+| Compile          | Implemented     | Platform-specific Kotlin compilation (compile-only)       |
 | Tests / Coverage | Not implemented | Placeholder — skipped for now                             |
 | Code Analysis    | Implemented     | detekt + CodeQL via reusable workflow                     |
 | Deploy           | Not implemented | Placeholder — skipped for now                             |
@@ -175,21 +175,21 @@ Reports are written to `<module>/build/reports/detekt/` as HTML and SARIF files.
 
 ## Principal CI Workflows
 
-| Workflow         | File             | Build command                           | Runner          | Timeout |
-|------------------|------------------|-----------------------------------------|-----------------|---------|
-| Mobile (Android) | `ci-mobile.yml`  | `:composeApp:assembleDebug`             | `macos-latest`  | 30 min  |
-| Mobile (iOS)     | `ci-mobile.yml`  | Not implemented yet                     | `macos-latest`  | 30 min  |
-| Desktop          | `ci-desktop.yml` | `:composeApp:jvmJar`                    | `ubuntu-latest` | 20 min  |
-| Server           | `ci-server.yml`  | `:server:build`                         | `ubuntu-latest` | 20 min  |
-| Webapp           | `ci-webapp.yml`  | `:composeApp:wasmJsBrowserDistribution` | `ubuntu-latest` | 20 min  |
+| Workflow         | File             | Compile command                      | Runner          | Timeout |
+|------------------|------------------|--------------------------------------|-----------------|---------|
+| Mobile (Android) | `ci-mobile.yml`  | `:androidApp:compileDebugKotlin`     | `ubuntu-latest` | 30 min  |
+| Mobile (iOS)     | `ci-mobile.yml`  | `:composeApp:compileKotlinIosSimulatorArm64` | `macos-latest`  | 45 min  |
+| Desktop          | `ci-desktop.yml` | `:composeApp:compileKotlinJvm`       | `ubuntu-latest` | 20 min  |
+| Server           | `ci-server.yml`  | `:server:classes`                    | `ubuntu-latest` | 20 min  |
+| Webapp           | `ci-webapp.yml`  | `:composeApp:compileKotlinWasmJs`    | `ubuntu-latest` | 20 min  |
 
-Mobile uses `macos-latest` to support iOS build steps (currently placeholder).
+**Key design**: CI step is compile-only verification, NOT artifact production. Each module compiles independently; the shared module is compiled transitively through module dependencies. iOS requires `macos-latest` for Kotlin/Native; all others use `ubuntu-latest` (cheaper and faster).
 
 ### Job graph (desktop / webapp / server)
 
 ```
 lint ──┐
-       ├── build ── [tests/coverage] ── code-analysis ── [deploy]
+       ├── compile ── [tests/coverage] ── code-analysis ── [release / deploy]
 audit ─┘
 ```
 
@@ -197,9 +197,10 @@ audit ─┘
 
 ```
 lint ──┐
-       ├── build-android ──┐
-audit ─┘                   ├── [tests/coverage] ── code-analysis ── [deploy]
-       ├── build-ios ──────┘
+       ├── compile-android ──┐
+audit ─┘                     ├── [tests/coverage] ── code-analysis ── [release / deploy]
+version ┐ (optional)         │
+        ├── compile-ios ─────┘
        └── (parallel)
 ```
 
@@ -215,16 +216,15 @@ title: GitHub Actions CI/CD Architecture
 graph TD
     classDef trigger fill:#fef9c3,stroke:#ca8a04,color:#713f12
     classDef reusable fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
-    classDef build fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef compile fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef analysis fill:#f3e8ff,stroke:#7c3aed,color:#3b0764
-    classDef placeholder fill:#f1f5f9,stroke:#94a3b8,color:#475569
 
     PR["PR / workflow_dispatch"]:::trigger
 
-    PR --> Mobile["ci-mobile.yml"]:::build
-    PR --> Desktop["ci-desktop.yml"]:::build
-    PR --> Server["ci-server.yml"]:::build
-    PR --> Webapp["ci-webapp.yml"]:::build
+    PR --> Mobile["ci-mobile.yml"]:::compile
+    PR --> Desktop["ci-desktop.yml"]:::compile
+    PR --> Server["ci-server.yml"]:::compile
+    PR --> Webapp["ci-webapp.yml"]:::compile
 
     subgraph "Reusable Workflows (parallel)"
         Lint["lint.yml"]:::reusable
@@ -240,26 +240,118 @@ graph TD
     Webapp --> Lint
     Webapp --> Audit
 
-    Lint --> BuildAndroid["assembleDebug"]:::build
-    Audit --> BuildAndroid
-    Lint --> BuildIOS["iOS (placeholder)"]:::placeholder
-    Audit --> BuildIOS
-    Lint --> BuildDesktop["jvmJar"]:::build
-    Audit --> BuildDesktop
-    Lint --> BuildServer["server:build"]:::build
-    Audit --> BuildServer
-    Lint --> BuildWasm["wasmJsBrowserDistribution"]:::build
-    Audit --> BuildWasm
+    Lint --> CompileAndroid["compileDebugKotlin"]:::compile
+    Audit --> CompileAndroid
+    Lint --> CompileIOS["compileKotlinIosSimulatorArm64"]:::compile
+    Audit --> CompileIOS
+    Lint --> CompileDesktop["compileKotlinJvm"]:::compile
+    Audit --> CompileDesktop
+    Lint --> CompileServer["classes"]:::compile
+    Audit --> CompileServer
+    Lint --> CompileWasm["compileKotlinWasmJs"]:::compile
+    Audit --> CompileWasm
 
-    BuildAndroid --> CA["code-analysis.yml"]:::analysis
-    BuildIOS --> CA
-    BuildDesktop --> CA
-    BuildServer --> CA
-    BuildWasm --> CA
+    CompileAndroid --> CA["code-analysis.yml"]:::analysis
+    CompileIOS --> CA
+    CompileDesktop --> CA
+    CompileServer --> CA
+    CompileWasm --> CA
 
     CA --> Detekt["detekt (all modules)"]:::analysis
     CA --> CodeQL["codeql (java-kotlin)"]:::analysis
 ```
+
+---
+
+## Compile-Only Architecture
+
+The CI pipeline runs **compile-only** Gradle tasks, not full builds. This is a deliberate design choice that separates concerns:
+
+- **CI (compile-only)** — Verifies code compiles, no artifacts produced
+- **Deploy (artifact production)** — Runs full builds, packaging (JAR, APK, wheel, etc.), only when deploying to production
+
+### Why compile-only in CI?
+
+1. **Faster feedback** — Compilation is 5-10x faster than full packaging
+2. **Reduced redundancy** — No point building artifacts that won't be deployed
+3. **Separated concerns** — Each workflow focuses on a single responsibility
+4. **Transitive compilation** — The shared module compiles automatically as a dependency of other modules
+
+### Compile tasks by platform
+
+| Platform | Task                            | What it does                                          |
+|----------|--------------------------------|-------------------------------------------------------|
+| Android  | `:androidApp:compileDebugKotlin` | Compiles Kotlin sources for Android (app + shared)   |
+| iOS      | `:composeApp:compileKotlinIosSimulatorArm64` | Kotlin/Native compilation for iOS simulator         |
+| Desktop  | `:composeApp:compileKotlinJvm`  | Compiles JVM sources (composeApp + shared)           |
+| Server   | `:server:classes`                | Compiles Kotlin sources for server (server + shared) |
+| Webapp   | `:composeApp:compileKotlinWasmJs` | Compiles to WebAssembly (composeApp + shared)       |
+
+---
+
+## Environment Variables
+
+All principal CI workflows inject environment variables needed for compilation. These are **non-sensitive** configuration variables, not secrets.
+
+### GitHub Variables (non-sensitive)
+
+Configure these in repo Settings → Variables:
+
+| Variable      | Example              | Used By                             |
+|---------------|----------------------|-------------------------------------|
+| `APP_ENV`     | `dev`, `test`, `staging`, `prod` | All workflows (defaults to `dev`)   |
+| `SERVER_PORT` | `8080`               | All workflows (Ktor config)         |
+| `SERVER_HOST` | `localhost`          | All workflows (Ktor config)         |
+
+### GitHub Secrets (sensitive)
+
+Configure these in repo Settings → Secrets:
+
+| Secret          | Purpose                         | Used By            |
+|-----------------|----------------------------------|--------------------|
+| `NVD_API_KEY`   | OWASP Dependency Check API key   | All workflows      |
+| `TODOIST_TOKEN` | Todoist API token (if needed)    | All workflows      |
+
+### Injection pattern in workflows
+
+```yaml
+- name: Compile [Platform]
+  run: ./gradlew [task] --no-daemon
+  env:
+    APP_ENV: ${{ vars.APP_ENV || 'dev' }}
+    NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+    SERVER_PORT: ${{ vars.SERVER_PORT }}
+    SERVER_HOST: ${{ vars.SERVER_HOST }}
+```
+
+---
+
+## iOS Build Requirements
+
+iOS compilation requires special handling:
+
+### Konan Cache
+
+Kotlin/Native downloads the Konan toolchain (~500 MB) on first run. CI caches it to speed up subsequent builds:
+
+```yaml
+- name: Cache Kotlin/Native (Konan)
+  uses: actions/cache@v4
+  with:
+    path: ~/.konan
+    key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+    restore-keys: |
+      konan-${{ runner.os }}-
+```
+
+Cache is invalidated when `gradle/libs.versions.toml` changes (new Kotlin version, Konan target updates).
+
+### Memory and Runner
+
+- **Runner:** `macos-latest` (only platform with iOS toolchain)
+- **Memory:** `GRADLE_OPTS: "-Xmx4g"` — Kotlin/Native compilation is memory-intensive
+- **Timeout:** 45 minutes (vs. 30 min for Android, due to Konan overhead)
 
 ---
 
@@ -352,13 +444,16 @@ This avoids wasting CI minutes on outdated commits.
 | Code analysis job fails                 | detekt violations                    | Run `./gradlew detektAll` locally; fix reported issues           |
 | Too many detekt violations on first run | Existing code not yet compliant      | Generate a baseline: `./gradlew detektBaseline`                  |
 | CodeQL build step fails                 | JVM compilation error                | Fix compile errors in `:server`, `:shared`, or `:composeApp:jvm` |
-| Build job doesn't start                 | Lint or audit failed                 | Fix both before build proceeds                                   |
-| Code analysis doesn't start             | Build failed                         | Fix the build first — code analysis runs after build             |
+| Compile job doesn't start               | Lint or audit failed                 | Fix both before compile proceeds                                 |
+| Code analysis doesn't start             | Compile failed                       | Fix the compile first — code analysis runs after compile         |
 | Compose rule violation                  | Missing `Modifier` param, etc.       | See Compose rules above                                          |
-| Slow first run                          | Empty Gradle cache                   | Second run will use the cache                                    |
-| Mobile build fails on `macos-latest`    | iOS toolchain issue                  | Check Xcode/KMP version compatibility                            |
+| Slow first run (Android, Server, Desktop, Webapp) | Empty Gradle cache         | Second run will use the cache                                    |
+| Slow first iOS run                      | Empty Konan cache                    | Konan (~500 MB) downloads on first run; cached thereafter        |
+| iOS compile fails on `macos-latest`     | iOS/Kotlin/Native version mismatch   | Check Xcode version and `libs.versions.toml` Kotlin version      |
+| Konan cache keeps getting invalidated   | `gradle/libs.versions.toml` changed  | Expected — cache key includes libs.versions.toml hash            |
 | SARIF not appearing in Security tab     | GitHub Advanced Security not enabled | Enable it in repo Settings → Security → Code scanning            |
 | Audit fails with NVD error              | Missing or expired `NVD_API_KEY`     | Add/renew the secret in repo Settings → Secrets                  |
+| Compile fails with env var errors       | Missing GitHub Variables             | Add `APP_ENV`, `SERVER_PORT`, `SERVER_HOST` in Settings → Variables |
 
 ---
 
@@ -383,7 +478,7 @@ This avoids wasting CI minutes on outdated commits.
            type: boolean
            default: false
    ```
-3. Add lint and audit as parallel gating jobs, then build, then code-analysis:
+3. Add lint and audit as parallel gating jobs, then compile, then code-analysis:
    ```yaml
    jobs:
      lint:
@@ -393,12 +488,26 @@ This avoids wasting CI minutes on outdated commits.
        uses: ./.github/workflows/dependency-audit.yml
        secrets: inherit
 
-     build:
+     compile:
        needs: [lint, audit]
-       ...
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: actions/setup-java@v4
+           with:
+             java-version: "17"
+             distribution: "temurin"
+         - uses: gradle/actions/setup-gradle@v4
+         - run: ./gradlew :[module]:classes --no-daemon
+           env:
+             APP_ENV: ${{ vars.APP_ENV || 'dev' }}
+             NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+             TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+             SERVER_PORT: ${{ vars.SERVER_PORT }}
+             SERVER_HOST: ${{ vars.SERVER_HOST }}
 
      code-analysis:
-       needs: [build]
+       needs: [compile]
        uses: ./.github/workflows/code-analysis.yml
        permissions:
          contents: read
