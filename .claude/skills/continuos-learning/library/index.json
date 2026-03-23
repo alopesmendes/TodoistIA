@@ -1,5 +1,51 @@
 {
-  "learnings": [],
-  "session_count": 0,
-  "last_analysis": null
+  "learnings": [
+    {
+      "id": "workflow/kmp-gradle-compile-tasks",
+      "name": "KMP Gradle compile tasks by target",
+      "category": "workflow",
+      "seen_count": 1,
+      "first_seen": "2026-03-22",
+      "last_seen": "2026-03-22",
+      "tags": ["kmp", "gradle", "ci", "build-tasks", "android", "ios", "server", "desktop", "webapp"]
+    },
+    {
+      "id": "tool-usage/github-actions-environment-variable-pattern",
+      "name": "GitHub Actions environment variable pattern (vars. vs secrets.)",
+      "category": "tool-usage",
+      "seen_count": 1,
+      "first_seen": "2026-03-22",
+      "last_seen": "2026-03-22",
+      "tags": ["github-actions", "ci-cd", "environment-variables", "secrets", "security"]
+    },
+    {
+      "id": "workflow/multi-target-kmp-ci-structure",
+      "name": "Multi-target KMP CI/CD workflow structure",
+      "category": "workflow",
+      "seen_count": 1,
+      "first_seen": "2026-03-22",
+      "last_seen": "2026-03-22",
+      "tags": ["kmp", "ci-cd", "github-actions", "workflow-architecture", "reusable-workflows"]
+    },
+    {
+      "id": "project-specific/kmp-module-transitive-compilation",
+      "name": "KMP module transitive compilation strategy",
+      "category": "project-specific",
+      "seen_count": 1,
+      "first_seen": "2026-03-22",
+      "last_seen": "2026-03-22",
+      "tags": ["kmp", "gradle", "module-dependencies", "compilation", "optimization"]
+    },
+    {
+      "id": "workflow/gradle-cache-strategy-ci",
+      "name": "Gradle cache strategy in GitHub Actions CI",
+      "category": "workflow",
+      "seen_count": 1,
+      "first_seen": "2026-03-22",
+      "last_seen": "2026-03-22",
+      "tags": ["gradle", "caching", "github-actions", "ci-cd", "performance"]
+    }
+  ],
+  "session_count": 1,
+  "last_analysis": "2026-03-22"
 }

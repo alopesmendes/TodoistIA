@@ -1,0 +1,196 @@
+name: version-bump
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: "Module identifier: mobile | desktop | webapp | server"
+        type: string
+        required: true
+      version_current:
+        description: "Use current version (no bump)"
+        type: boolean
+        default: true
+      version_patch:
+        description: "Bump patch"
+        type: boolean
+        default: false
+      version_minor:
+        description: "Bump minor"
+        type: boolean
+        default: false
+      version_major:
+        description: "Bump major"
+        type: boolean
+        default: false
+      version_custom:
+        description: "Custom version string (overrides all others)"
+        type: string
+        default: ""
+      is_production:
+        description: "Whether this is a production build (triggers mobile build number increment)"
+        type: boolean
+        default: false
+    outputs:
+      version:
+        description: "The resolved version string"
+        value: ${{ jobs.compute.outputs.version }}
+      previous_version:
+        description: "The version before bumping"
+        value: ${{ jobs.compute.outputs.previous_version }}
+      version_changed:
+        description: "Whether the version was actually changed"
+        value: ${{ jobs.compute.outputs.version_changed }}
+      previous_tag:
+        description: "The most recent git tag for this module (empty if none)"
+        value: ${{ jobs.compute.outputs.previous_tag }}
+
+jobs:
+  compute:
+    name: Compute & Apply Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      previous_version: ${{ steps.read.outputs.current_version }}
+      version_changed: ${{ steps.resolve.outputs.version_changed }}
+      previous_tag: ${{ steps.read.outputs.previous_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read current version
+        id: read
+        run: |
+          case "${{ inputs.module }}" in
+            mobile)
+              VERSION=$(grep 'versionName' androidApp/build.gradle.kts | grep -oP '"[^"]+"' | tr -d '"')
+              ;;
+            desktop)
+              VERSION=$(grep 'packageVersion' composeApp/build.gradle.kts | grep -oP '"[^"]+"' | tr -d '"')
+              ;;
+            webapp)
+              VERSION=$(grep 'packageVersion' composeApp/build.gradle.kts | grep -oP '"[^"]+"' | tr -d '"')
+              ;;
+            server)
+              VERSION=$(grep '^version' server/build.gradle.kts | grep -oP '"[^"]+"' | tr -d '"')
+              ;;
+            *)
+              echo "::error::Unknown module: ${{ inputs.module }}"
+              exit 1
+              ;;
+          esac
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version for module ${{ inputs.module }}"
+            exit 1
+          fi
+
+          echo "current_version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version for ${{ inputs.module }}: $VERSION"
+
+          # Find the most recent tag for this module
+          PREVIOUS_TAG=$(git tag -l "${{ inputs.module }}/v*" --sort=-version:refname | head -n 1 || echo "")
+          echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+          echo "Previous tag: ${PREVIOUS_TAG:-none}"
+
+      - name: Resolve target version
+        id: resolve
+        run: |
+          CURRENT="${{ steps.read.outputs.current_version }}"
+
+          # Normalize to 3-segment semver
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Priority: custom > major > minor > patch > current
+          CUSTOM="${{ inputs.version_custom }}"
+          if [ -n "$CUSTOM" ]; then
+            # Validate custom version format
+            if ! echo "$CUSTOM" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+              echo "::error::Invalid custom version format: $CUSTOM (expected: X.Y.Z or X.Y.Z-suffix)"
+              exit 1
+            fi
+            NEW_VERSION="$CUSTOM"
+            echo "Using custom version: $NEW_VERSION"
+          elif [ "${{ inputs.version_major }}" = "true" ]; then
+            NEW_VERSION="$((MAJOR + 1)).0.0"
+            echo "Bumping major: $CURRENT -> $NEW_VERSION"
+          elif [ "${{ inputs.version_minor }}" = "true" ]; then
+            NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+            echo "Bumping minor: $CURRENT -> $NEW_VERSION"
+          elif [ "${{ inputs.version_patch }}" = "true" ]; then
+            NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            echo "Bumping patch: $CURRENT -> $NEW_VERSION"
+          else
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Keeping current version: $NEW_VERSION"
+          fi
+
+          VERSION_CHANGED="false"
+          if [ "$NEW_VERSION" != "${MAJOR}.${MINOR}.${PATCH}" ]; then
+            VERSION_CHANGED="true"
+          fi
+
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_changed=$VERSION_CHANGED" >> "$GITHUB_OUTPUT"
+
+      - name: Update version in source files
+        if: steps.resolve.outputs.version_changed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+
+          case "${{ inputs.module }}" in
+            mobile)
+              # Update Android versionName
+              sed -i "s/versionName = \".*\"/versionName = \"$NEW_VERSION\"/" androidApp/build.gradle.kts
+              # Update iOS MARKETING_VERSION
+              sed -i "s/MARKETING_VERSION=.*/MARKETING_VERSION=$NEW_VERSION/" iosApp/Configuration/Config.xcconfig
+              echo "Updated mobile version to $NEW_VERSION"
+              ;;
+            desktop|webapp)
+              sed -i "s/packageVersion = \".*\"/packageVersion = \"$NEW_VERSION\"/" composeApp/build.gradle.kts
+              echo "Updated ${{ inputs.module }} version to $NEW_VERSION"
+              ;;
+            server)
+              sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" server/build.gradle.kts
+              echo "Updated server version to $NEW_VERSION"
+              ;;
+          esac
+
+      - name: Increment mobile build numbers (production only)
+        if: inputs.module == 'mobile' && inputs.is_production
+        run: |
+          # Increment Android versionCode
+          CURRENT_CODE=$(grep 'versionCode' androidApp/build.gradle.kts | grep -oP '[0-9]+')
+          NEW_CODE=$((CURRENT_CODE + 1))
+          sed -i "s/versionCode = $CURRENT_CODE/versionCode = $NEW_CODE/" androidApp/build.gradle.kts
+          echo "Android versionCode: $CURRENT_CODE -> $NEW_CODE"
+
+          # Increment iOS CURRENT_PROJECT_VERSION
+          CURRENT_BUILD=$(grep 'CURRENT_PROJECT_VERSION' iosApp/Configuration/Config.xcconfig | cut -d= -f2)
+          NEW_BUILD=$((CURRENT_BUILD + 1))
+          sed -i "s/CURRENT_PROJECT_VERSION=$CURRENT_BUILD/CURRENT_PROJECT_VERSION=$NEW_BUILD/" iosApp/Configuration/Config.xcconfig
+          echo "iOS CURRENT_PROJECT_VERSION: $CURRENT_BUILD -> $NEW_BUILD"
+
+      - name: Commit version changes
+        if: steps.resolve.outputs.version_changed == 'true' || (inputs.module == 'mobile' && inputs.is_production)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m ":bookmark: release(${{ inputs.module }}): v${{ steps.resolve.outputs.version }}"
+            git push
+            echo "Committed and pushed version changes"
+          fi

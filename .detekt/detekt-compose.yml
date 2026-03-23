@@ -1,0 +1,48 @@
+# Compose-specific detekt rules for composeApp and androidApp modules.
+# Layered on top of detekt-base.yml via --config flag ordering.
+# Uses io.nlopez.compose.rules:detekt plugin.
+
+# Override naming to allow uppercase Composable function names
+naming:
+  FunctionNaming:
+    active: true
+    functionPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    excludes: ["**/test/**", "**/androidTest/**"]
+
+# Compose rules from nlopez/compose-rules
+# These are auto-detected when the detekt-compose-rules dependency is on the classpath.
+# The rules below fine-tune the defaults.
+
+Compose:
+  ComposableAnnotationNaming:
+    active: true
+  CompositionLocalAllowlist:
+    active: false  # Enable when project defines a local allowlist
+  ContentEmitterReturningValues:
+    active: true
+  ModifierClickableOrder:
+    active: true
+  ModifierMissing:
+    active: true
+  ModifierReused:
+    active: true
+  ModifierWithoutDefault:
+    active: true
+  MultipleEmitters:
+    active: true
+  ComposableNaming:
+    active: true
+  ComposableParamOrder:
+    active: true
+  PreviewAnnotationNaming:
+    active: true
+  PreviewPublic:
+    active: true
+  RememberMissing:
+    active: true
+  UnstableCollections:
+    active: false  # Too noisy during early development
+  ViewModelForwarding:
+    active: true
+  ViewModelInjection:
+    active: true

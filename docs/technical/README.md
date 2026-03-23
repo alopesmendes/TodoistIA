@@ -1,6 +1,6 @@
 # Technical Documentation — TodoistIA
 
-**Last Updated:** 2026-03-14
+**Last Updated:** 2026-03-16
 
 ## Overview
 
@@ -21,6 +21,8 @@ TodoistIA is a Kotlin Multiplatform project targeting Android, iOS, Desktop (JVM
 | Document                                       | Description                                              |
 |------------------------------------------------|----------------------------------------------------------|
 | [architecture.md](architecture.md)             | High-level module and dependency graph                   |
+| [ci-cd.md](ci-cd.md)                          | GitHub Actions workflows, ktlint, build process          |
+| [dependency-management.md](dependency-management.md) | Renovate, OWASP scans, version catalog |
 | [agp9-migration.md](agp9-migration.md)         | Step-by-step AGP 8 → 9 migration with diffs and diagrams |
 | [data-flow.md](data-flow.md)                   | How data flows from entry points through modules         |
 | [modules/androidApp.md](modules/androidApp.md) | `:androidApp` — Android application shell                |

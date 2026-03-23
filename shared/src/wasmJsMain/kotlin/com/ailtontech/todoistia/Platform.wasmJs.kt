@@ -1,6 +1,6 @@
 package com.ailtontech.todoistia
 
-class WasmPlatform: Platform {
+class WasmPlatform : Platform {
     override val name: String = "Web with Kotlin/Wasm"
 }
 
