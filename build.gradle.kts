@@ -58,6 +58,7 @@ plugins {
     alias(libs.plugins.benManesVersions)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt) apply false
+    alias(libs.plugins.kover)
 }
 
 // ── OWASP Dependency Check ──────────────────────────────────────────────────
@@ -197,4 +198,62 @@ tasks.register<Exec>("installGitHooks") {
 
 tasks.named("prepareKotlinBuildScriptModel") {
     dependsOn("installGitHooks")
+}
+
+// ── Kover (code coverage) ───────────────────────────────────────────────────
+dependencies {
+    kover(projects.shared)
+    kover(projects.composeApp)
+    kover(projects.server)
+}
+
+kover {
+    reports {
+        total {
+            xml {
+                onCheck = false
+                xmlFile.set(layout.buildDirectory.file("reports/kover/result.xml"))
+            }
+            html {
+                onCheck = false
+                htmlDir.set(layout.buildDirectory.dir("reports/kover/html"))
+            }
+            verify {
+                rule("Minimum coverage") {
+                    minBound(80)
+                }
+            }
+        }
+    }
+}
+
+// ── Test tasks ──────────────────────────────────────────────────────────────
+tasks.register("unitTest") {
+    group = "verification"
+    description = "Runs unit tests across shared and composeApp (JVM target)"
+    dependsOn(":shared:jvmTest", ":composeApp:jvmTest")
+}
+
+tasks.register("integrationTest") {
+    group = "verification"
+    description = "Runs server integration tests"
+    dependsOn(":server:test")
+}
+
+tasks.register("allTests") {
+    group = "verification"
+    description = "Runs all tests (unit + integration)"
+    dependsOn("unitTest", "integrationTest")
+}
+
+tasks.register("coverageReport") {
+    group = "verification"
+    description = "Generates merged Kover XML + HTML coverage reports"
+    dependsOn("allTests", "koverXmlReport", "koverHtmlReport")
+}
+
+tasks.register("coverageVerify") {
+    group = "verification"
+    description = "Verifies minimum coverage threshold (80%)"
+    dependsOn("allTests", "koverVerify")
 }
