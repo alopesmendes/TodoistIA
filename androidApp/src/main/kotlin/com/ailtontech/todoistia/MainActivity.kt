@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:function-naming")
+
 package com.ailtontech.todoistia
 
 import android.os.Bundle

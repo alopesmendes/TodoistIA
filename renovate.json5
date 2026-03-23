@@ -1,0 +1,101 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "baseBranches": ["develop", "staging", "master"],
+  "rangeStrategy": "pin",
+  "schedule": ["every weekend"],
+  "prConcurrentLimit": 5,
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Dashboard",
+  "labels": ["chore"],
+  "commitMessagePrefix": ":arrow_up:",
+  "branchPrefix": "deps/",
+
+  // Stability: wait 3 days before automerging minor/patch updates
+  "minimumReleaseAge": "3 days",
+
+  // Block automerge until the audit CI job passes
+  "requiredStatusChecks": ["Dependency Vulnerability Scan"],
+
+  "packageRules": [
+    // ── Kotlin ecosystem ──────────────────────────────────────────────────
+    {
+      "groupName": "Kotlin",
+      "matchPackagePrefixes": [
+        "org.jetbrains.kotlin",
+        "org.jetbrains.kotlinx"
+      ],
+      "automerge": false
+    },
+
+    // ── Compose Multiplatform ────────────────────────────────────────────
+    {
+      "groupName": "Compose Multiplatform",
+      "matchPackagePrefixes": [
+        "org.jetbrains.compose",
+        "org.jetbrains.androidx"
+      ],
+      "automerge": false
+    },
+
+    // ── Ktor ─────────────────────────────────────────────────────────────
+    {
+      "groupName": "Ktor",
+      "matchPackagePrefixes": ["io.ktor"],
+      "automerge": false
+    },
+
+    // ── AndroidX ─────────────────────────────────────────────────────────
+    {
+      "groupName": "AndroidX",
+      "matchPackagePrefixes": ["androidx."],
+      "automerge": false
+    },
+
+    // ── Android Gradle Plugin ─────────────────────────────────────────────
+    {
+      "groupName": "AGP",
+      "matchPackageNames": [
+        "com.android.application",
+        "com.android.library",
+        "com.android.kotlin.multiplatform.library"
+      ],
+      "automerge": false
+    },
+
+    // ── Patch updates: automerge after CI passes ──────────────────────────
+    {
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+
+    // ── Minor updates: wait for stability before merging ──────────────────
+    {
+      "matchUpdateTypes": ["minor"],
+      "automerge": false,
+      "minimumReleaseAge": "3 days"
+    },
+
+    // ── Major updates: require manual review ─────────────────────────────
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["chore", "breaking-change"]
+    }
+  ],
+
+  // ── Managers ──────────────────────────────────────────────────────────
+  "gradle": {
+    "enabled": true
+  },
+  "gradle-wrapper": {
+    "enabled": true
+  },
+  "github-actions": {
+    "enabled": true
+  }
+}

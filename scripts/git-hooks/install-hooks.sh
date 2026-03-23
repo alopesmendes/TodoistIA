@@ -69,6 +69,7 @@ install_hook() {
     echo -e "${GREEN}✓ $hook_name installed${NC}"
 }
 
+install_hook "pre-commit"
 install_hook "prepare-commit-msg"
 
 echo ""
@@ -76,6 +77,12 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  How It Works${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
+echo -e "${BLUE}pre-commit${NC}"
+echo -e "  Runs ${YELLOW}ktlintFormat${NC} on staged .kt/.kts files only."
+echo -e "  Only the modules that contain staged files are linted."
+echo -e "  Formatted files are automatically re-staged."
+echo ""
+echo -e "${BLUE}prepare-commit-msg${NC}"
 echo -e "Branch convention: ${YELLOW}prefix/number-description${NC}"
 echo -e "Prefixes: feat, fix, hotfix, chore, docs, style, refactor, test, perf, ci, build, revert"
 echo ""
