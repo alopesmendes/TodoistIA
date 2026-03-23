@@ -36,7 +36,7 @@ jobs:
           cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
 
       - name: Cache NVD database
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.gradle/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
