@@ -1,0 +1,92 @@
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: "Module identifier: mobile | desktop | webapp | server"
+        type: string
+        required: true
+      version:
+        description: "Version to release (e.g., 1.2.0)"
+        type: string
+        required: true
+      previous_tag:
+        description: "Previous git tag for changelog range (empty = full log)"
+        type: string
+        default: ""
+      module_paths:
+        description: "Space-separated paths to filter git log (e.g., 'server/ shared/')"
+        type: string
+        required: true
+
+jobs:
+  create-release:
+    name: Tag & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG_NAME="${{ inputs.module }}/v${{ inputs.version }}"
+          PREVIOUS_TAG="${{ inputs.previous_tag }}"
+          MODULE_PATHS="${{ inputs.module_paths }}"
+
+          echo "Generating changelog for $TAG_NAME"
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "Range: $PREVIOUS_TAG..HEAD"
+            CHANGELOG=$(git log --oneline --no-merges "$PREVIOUS_TAG..HEAD" -- $MODULE_PATHS || echo "No changes found")
+          else
+            echo "No previous tag — using full history"
+            CHANGELOG=$(git log --oneline --no-merges -- $MODULE_PATHS || echo "No changes found")
+          fi
+
+          # Write changelog to file for multi-line output
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$CHANGELOG" | while IFS= read -r line; do
+              echo "- $line"
+            done
+            echo ""
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "**Full diff**: $PREVIOUS_TAG...$TAG_NAME"
+            fi
+          } > /tmp/release_body.md
+
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          cat /tmp/release_body.md
+
+      - name: Create tag
+        run: |
+          TAG_NAME="${{ steps.changelog.outputs.tag_name }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG_NAME" -m "Release ${{ inputs.module }} v${{ inputs.version }}"
+          git push origin "$TAG_NAME"
+          echo "Created and pushed tag: $TAG_NAME"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${{ steps.changelog.outputs.tag_name }}"
+
+          gh release create "$TAG_NAME" \
+            --title "${{ inputs.module }} v${{ inputs.version }}" \
+            --notes-file /tmp/release_body.md \
+            --target "$(git rev-parse HEAD)"
+
+          echo "Created GitHub Release: $TAG_NAME"

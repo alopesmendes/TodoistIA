@@ -1,3 +1,6 @@
+@file:OptIn(ExperimentalComposeLibrary::class)
+
+import org.jetbrains.compose.ExperimentalComposeLibrary
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -8,6 +11,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
+    alias(libs.plugins.kover)
 }
 
 kotlin {
@@ -25,7 +29,7 @@ kotlin {
 
     listOf(
         iosArm64(),
-        iosSimulatorArm64()
+        iosSimulatorArm64(),
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
@@ -63,6 +67,12 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.turbine)
+            implementation(libs.ui.test)
+        }
+        jvmTest.dependencies {
+            implementation(compose.desktop.currentOs)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -73,6 +83,7 @@ kotlin {
 
 dependencies {
     "androidRuntimeClasspath"(libs.compose.uiTooling)
+    ktlintRuleset(libs.ktlint.compose.rules)
 }
 
 compose.desktop {

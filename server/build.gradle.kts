@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.ktor)
+    alias(libs.plugins.kover)
     application
 }
 
@@ -8,7 +9,7 @@ group = "com.ailtontech.todoistia"
 version = "1.0.0"
 application {
     mainClass.set("com.ailtontech.todoistia.ApplicationKt")
-    
+
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
 }
@@ -20,4 +21,5 @@ dependencies {
     implementation(libs.ktor.serverNetty)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

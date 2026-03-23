@@ -7,7 +7,7 @@ Dependency updates are automated by two tools working together:
 
 Together they keep the project fresh and secure with minimal manual effort.
 
-_Last Updated: 2026-03-15_
+_Last Updated: 2026-03-16_
 
 ---
 
@@ -20,16 +20,16 @@ The diagram below shows the full lifecycle of a dependency update, from Renovate
 title: Renovate Update Cycle
 ---
 flowchart TD
-    A["Renovate scans weekly\nlibs.versions.toml · gradle-wrapper · GitHub Actions"]
+    A["Renovate scans weekly"]
     B{"Update found?"}
     C["Open PR → develop"]
     D["CI runs: Dependency Vulnerability Scan"]
     E{"Audit passed?"}
     F{"Update type?"}
-    G["Patch\nautomerge after 3 days"]
-    H["Minor / Major\nmanual review required"]
+    G["Patch -> automerge after 3 days"]
+    H["Minor / Major -> manual review required"]
     I["PR merged into develop"]
-    J["Triage CVE\nupgrade or suppress"]
+    J["Triage CVE -> upgrade or suppress"]
 
     A --> B
     B -->|No| A
@@ -157,6 +157,27 @@ This also runs on the weekly CI schedule and uploads the report as an artifact.
    ```
 
 Renovate picks up the new entry automatically on its next scan.
+
+---
+
+## Gradle Plugins Catalog
+
+The project uses a **version catalog** in `gradle/libs.versions.toml` to manage all dependencies and plugins centrally. Key plugins:
+
+| Plugin                    | Version | Purpose                            |
+|---------------------------|---------|-------------------------------------|
+| `androidApplication`      | 9.1.0   | Android app shell                   |
+| `androidLibrary`          | 9.1.0   | Android library modules             |
+| `androidKmpLibrary`       | 9.1.0   | Kotlin Multiplatform on Android     |
+| `composeMultiplatform`    | 1.10.2  | Compose UI framework                |
+| `kotlinJvm`               | 2.3.10  | Kotlin JVM targets                  |
+| `kotlinMultiplatform`     | 2.3.10  | Kotlin Multiplatform                |
+| `ktor`                    | 3.4.1   | Ktor server plugin                  |
+| `owaspDependencyCheck`    | 12.2.0  | Vulnerability scanning              |
+| `benManesVersions`        | 0.53.0  | Dependency freshness reporting      |
+| **`ktlint`**              | 12.2.0  | **Kotlin code style enforcement**   |
+
+Plugins are declared in `build.gradle.kts` using `alias(libs.plugins.<name>) apply false`, ensuring versions stay in sync and updates flow through Renovate.
 
 ---
 
