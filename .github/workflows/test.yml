@@ -1,0 +1,179 @@
+name: test
+
+on:
+  workflow_call:
+    inputs:
+      test-types:
+        description: 'JSON array of test types: ["unit","integration","e2e"]'
+        required: false
+        type: string
+        default: '["unit","integration","e2e"]'
+      environment:
+        description: "Target environment"
+        required: false
+        type: string
+        default: "dev"
+      coverage-flag:
+        description: "Codecov flag (typically module name)"
+        required: false
+        type: string
+        default: "all"
+      java-version:
+        description: "JDK major version"
+        required: false
+        type: string
+        default: "17"
+  workflow_dispatch:
+    inputs:
+      test-types:
+        description: "JSON array of test types"
+        required: false
+        type: string
+        default: '["unit","integration","e2e"]'
+      environment:
+        description: "Target environment"
+        required: false
+        type: choice
+        options: [dev, test, staging, prod]
+        default: dev
+
+concurrency:
+  group: test-${{ github.ref }}-${{ inputs.environment }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: Resolve test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.compute.outputs.include }}
+    steps:
+      - id: compute
+        shell: bash
+        run: |
+          TYPES='${{ inputs.test-types }}'
+          ITEMS='[]'
+          for t in $(echo "$TYPES" | jq -r '.[]'); do
+            case "$t" in
+              unit)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg t "$t" \
+                  '. + [{type:$t, tasks:":shared:jvmTest :composeApp:jvmTest", timeout:25}]') ;;
+              integration)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg t "$t" \
+                  '. + [{type:$t, tasks:":server:integrationTest", timeout:30}]') ;;
+              e2e)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg t "$t" \
+                  '. + [{type:$t, tasks:":composeApp:e2eTest", timeout:45}]') ;;
+              *)
+                echo "::warning::Unknown test type '$t' — skipped" ;;
+            esac
+          done
+          echo "include=$ITEMS" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test (${{ matrix.type }})
+    needs: [matrix]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.include) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
+
+      - name: Verify tasks exist
+        id: verify
+        shell: bash
+        run: |
+          MISSING=""
+          for task in ${{ matrix.tasks }}; do
+            if ! ./gradlew "$task" --dry-run --quiet > /dev/null 2>&1; then
+              MISSING="$MISSING $task"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Skipping missing tasks:$MISSING"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run ${{ matrix.type }} tests
+        if: steps.verify.outputs.skip == 'false'
+        run: ./gradlew ${{ matrix.tasks }} --no-daemon --continue
+        env:
+          APP_ENV: ${{ inputs.environment }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+          SERVER_PORT: ${{ vars.SERVER_PORT }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.type }}
+          path: "**/build/reports/tests/**"
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload coverage binary data
+        if: steps.verify.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kover-bin-${{ matrix.type }}
+          path: "**/build/kover/bin-reports/**"
+          retention-days: 1
+          if-no-files-found: ignore
+
+  coverage:
+    name: Aggregate Coverage
+    needs: [test]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Download Kover bin reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: kover-bin-*
+          merge-multiple: true
+
+      - name: Generate Kover XML report
+        run: ./gradlew koverXmlReport --no-daemon
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: build/reports/kover/result.xml
+          flags: ${{ inputs.coverage-flag }}
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

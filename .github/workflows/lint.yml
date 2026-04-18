@@ -2,7 +2,39 @@ name: lint
 
 on:
   workflow_call:
+    inputs:
+      java-version:
+        description: "JDK major version to set up"
+        required: false
+        type: string
+        default: "17"
+      gradle-task:
+        description: "Gradle task to invoke for linting"
+        required: false
+        type: string
+        default: "lintCheck"
+      continue-on-error:
+        description: "Pass --continue to Gradle so all modules are linted before failing"
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      java-version:
+        description: "JDK major version to set up"
+        required: false
+        type: string
+        default: "17"
+      gradle-task:
+        description: "Gradle task to invoke for linting"
+        required: false
+        type: string
+        default: "lintCheck"
+      continue-on-error:
+        description: "Pass --continue to Gradle"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: lint-${{ github.ref }}
@@ -18,10 +50,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ inputs.java-version }}
         uses: actions/setup-java@v5
         with:
-          java-version: "17"
+          java-version: ${{ inputs.java-version }}
           distribution: "temurin"
 
       - name: Setup Gradle
@@ -30,4 +62,13 @@ jobs:
           cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
 
       - name: Run ktlint check
-        run: ./gradlew lintCheck --no-daemon
+        run: ./gradlew ${{ inputs.gradle-task }} --no-daemon ${{ inputs.continue-on-error && '--continue' || '' }}
+
+      - name: Upload ktlint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktlint-reports
+          path: "**/build/reports/ktlint/"
+          retention-days: 14
+          if-no-files-found: ignore

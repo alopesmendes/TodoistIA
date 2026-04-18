@@ -2,7 +2,49 @@ name: code-analysis
 
 on:
   workflow_call:
+    inputs:
+      run-detekt:
+        description: "Run Detekt static analysis job"
+        required: false
+        type: boolean
+        default: true
+      run-codeql:
+        description: "Run CodeQL security scan job"
+        required: false
+        type: boolean
+        default: true
+      detekt-task:
+        description: "Gradle task for Detekt"
+        required: false
+        type: string
+        default: "detektAll"
+      java-version:
+        description: "JDK major version"
+        required: false
+        type: string
+        default: "17"
   workflow_dispatch:
+    inputs:
+      run-detekt:
+        description: "Run Detekt"
+        required: false
+        type: boolean
+        default: true
+      run-codeql:
+        description: "Run CodeQL"
+        required: false
+        type: boolean
+        default: true
+      detekt-task:
+        description: "Detekt Gradle task"
+        required: false
+        type: string
+        default: "detektAll"
+      java-version:
+        description: "JDK major version"
+        required: false
+        type: string
+        default: "17"
 
 concurrency:
   group: code-analysis-${{ github.ref }}
@@ -13,9 +55,9 @@ permissions:
   security-events: write
 
 jobs:
-  # ── Job 1: detekt static analysis ──────────────────────────────────────────
   detekt:
     name: Detekt Analysis
+    if: ${{ inputs.run-detekt }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -23,10 +65,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ inputs.java-version }}
         uses: actions/setup-java@v5
         with:
-          java-version: "17"
+          java-version: ${{ inputs.java-version }}
           distribution: "temurin"
 
       - name: Setup Gradle
@@ -35,7 +77,7 @@ jobs:
           cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
 
       - name: Run detekt on all modules
-        run: ./gradlew detektAll --no-daemon --continue
+        run: ./gradlew ${{ inputs.detekt-task }} --no-daemon --continue
 
       - name: Upload detekt reports
         if: always()
@@ -54,9 +96,9 @@ jobs:
           category: detekt
         continue-on-error: true
 
-  # ── Job 2: CodeQL security scanning ────────────────────────────────────────
   codeql:
     name: CodeQL Analysis
+    if: ${{ inputs.run-codeql }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -64,10 +106,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ inputs.java-version }}
         uses: actions/setup-java@v5
         with:
-          java-version: "17"
+          java-version: ${{ inputs.java-version }}
           distribution: "temurin"
 
       - name: Initialize CodeQL

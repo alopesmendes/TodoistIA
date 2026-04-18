@@ -61,6 +61,8 @@ jobs:
     name: Version Bump
     if: ${{ github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/version-bump.yml
+    permissions:
+      contents: write
     with:
       module: webapp
       version_current: ${{ inputs.version_current }}

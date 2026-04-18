@@ -1,0 +1,148 @@
+name: CI
+
+# Canonical entry point for CI. Composes reusable sub-workflows:
+#   lint → audit (parallel with lint) → [version?] → build → test → analysis → [deploy?]
+#
+# PR: full workflow, no version bump, no deploy.
+# workflow_dispatch: honours platform / environment / version_bump / deploy_artifact inputs.
+#
+# Concurrency note: PR runs are cancel-in-progress; manual dispatch on protected branches
+# must not be cancelled by subsequent pushes, so the group key isolates them.
+
+on:
+  pull_request:
+    branches: ["master", "develop", "staging"]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platforms to build"
+        required: false
+        type: choice
+        options: [all, android, ios]
+        default: all
+      environment:
+        description: "Target environment"
+        required: false
+        type: choice
+        options: [dev, test, staging, prod]
+        default: dev
+      version_bump:
+        description: "Version bump"
+        required: false
+        type: choice
+        options: [none, patch, minor, major, custom]
+        default: none
+      version_custom:
+        description: "Custom version (required when version_bump=custom)"
+        required: false
+        type: string
+        default: ""
+      deploy_artifact:
+        description: "Artifact to deploy"
+        required: false
+        type: choice
+        options: [none, apk, ipa, both]
+        default: none
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+  security-events: write
+
+jobs:
+  # ── Resolve platform list for build matrix ─────────────────────────────
+  resolve:
+    name: Resolve inputs
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.compute.outputs.platforms }}
+    steps:
+      - id: compute
+        shell: bash
+        run: |
+          SEL="${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}"
+          case "$SEL" in
+            android) PLATFORMS='["android"]' ;;
+            ios)     PLATFORMS='["ios"]' ;;
+            all|*)   PLATFORMS='["android","ios"]' ;;
+          esac
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+
+  # ── Shared quality gates (parallel) ────────────────────────────────────
+  lint:
+    name: Lint
+    uses: ./.github/workflows/lint.yml
+
+  audit:
+    name: Audit
+    uses: ./.github/workflows/dependency-audit.yml
+    secrets: inherit
+
+  # ── Version bump (dispatch only, skipped for PRs) ──────────────────────
+  version:
+    name: Version Bump
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.version_bump != 'none' }}
+    needs: [lint, audit]
+    uses: ./.github/workflows/version-bump.yml
+    with:
+      module: mobile
+      version_bump: ${{ inputs.version_bump }}
+      version_custom: ${{ inputs.version_custom }}
+      is_production: ${{ inputs.environment == 'prod' }}
+    secrets: inherit
+
+  # ── Build matrix ───────────────────────────────────────────────────────
+  build:
+    name: Build
+    needs: [resolve, lint, audit, version]
+    if: >-
+      !cancelled() &&
+      needs.lint.result == 'success' &&
+      needs.audit.result == 'success' &&
+      (needs.version.result == 'success' || needs.version.result == 'skipped')
+    uses: ./.github/workflows/build.yml
+    with:
+      platforms: ${{ needs.resolve.outputs.platforms }}
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      upload-artifacts: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_artifact != 'none' }}
+    secrets: inherit
+
+  # ── Tests (parallel unit / integration / e2e) ──────────────────────────
+  test:
+    name: Test
+    needs: [build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    uses: ./.github/workflows/test.yml
+    with:
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      coverage-flag: ci
+    secrets: inherit
+
+  # ── Analysis (detekt + CodeQL) ─────────────────────────────────────────
+  analysis:
+    name: Analysis
+    needs: [test]
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
+    uses: ./.github/workflows/code-analysis.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  # ── Deploy (dispatch only, gated by deploy_artifact) ───────────────────
+  deploy:
+    name: Deploy
+    needs: [analysis, version]
+    if: >-
+      !cancelled() &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy_artifact != 'none' &&
+      needs.analysis.result == 'success'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      artifact: ${{ inputs.deploy_artifact }}
+      environment: ${{ inputs.environment }}
+      version: ${{ needs.version.outputs.version || '' }}
+    secrets: inherit

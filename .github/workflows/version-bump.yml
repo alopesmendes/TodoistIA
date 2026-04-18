@@ -7,6 +7,10 @@ on:
         description: "Module identifier: mobile | desktop | webapp | server"
         type: string
         required: true
+      version_bump:
+        description: "Unified bump: none | patch | minor | major | custom (overrides legacy boolean inputs when not empty)"
+        type: string
+        default: ""
       version_current:
         description: "Use current version (no bump)"
         type: boolean
@@ -110,6 +114,30 @@ jobs:
           MINOR=${MINOR:-0}
           PATCH=${PATCH:-0}
 
+          # Normalize unified version_bump input into legacy flags
+          BUMP="${{ inputs.version_bump }}"
+          BUMP_CUSTOM=""
+          BUMP_MAJOR="${{ inputs.version_major }}"
+          BUMP_MINOR="${{ inputs.version_minor }}"
+          BUMP_PATCH="${{ inputs.version_patch }}"
+          case "$BUMP" in
+            "")       ;; # Legacy booleans untouched
+            none)     BUMP_MAJOR=false; BUMP_MINOR=false; BUMP_PATCH=false ;;
+            patch)    BUMP_MAJOR=false; BUMP_MINOR=false; BUMP_PATCH=true ;;
+            minor)    BUMP_MAJOR=false; BUMP_MINOR=true;  BUMP_PATCH=false ;;
+            major)    BUMP_MAJOR=true;  BUMP_MINOR=false; BUMP_PATCH=false ;;
+            custom)
+              if [ -z "${{ inputs.version_custom }}" ]; then
+                echo "::error::version_bump=custom requires a non-empty version_custom input"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Invalid version_bump value: $BUMP (expected: none|patch|minor|major|custom)"
+              exit 1
+              ;;
+          esac
+
           # Priority: custom > major > minor > patch > current
           CUSTOM="${{ inputs.version_custom }}"
           if [ -n "$CUSTOM" ]; then
@@ -120,13 +148,13 @@ jobs:
             fi
             NEW_VERSION="$CUSTOM"
             echo "Using custom version: $NEW_VERSION"
-          elif [ "${{ inputs.version_major }}" = "true" ]; then
+          elif [ "$BUMP_MAJOR" = "true" ]; then
             NEW_VERSION="$((MAJOR + 1)).0.0"
             echo "Bumping major: $CURRENT -> $NEW_VERSION"
-          elif [ "${{ inputs.version_minor }}" = "true" ]; then
+          elif [ "$BUMP_MINOR" = "true" ]; then
             NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
             echo "Bumping minor: $CURRENT -> $NEW_VERSION"
-          elif [ "${{ inputs.version_patch }}" = "true" ]; then
+          elif [ "$BUMP_PATCH" = "true" ]; then
             NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
             echo "Bumping patch: $CURRENT -> $NEW_VERSION"
           else
