@@ -1,0 +1,143 @@
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: 'JSON array of platforms to build: ["android","ios","desktop","webapp","server"]'
+        required: false
+        type: string
+        default: '["android","ios","desktop","webapp","server"]'
+      environment:
+        description: "Target environment (dev|test|staging|prod)"
+        required: false
+        type: string
+        default: "dev"
+      upload-artifacts:
+        description: "Upload per-platform build artifacts"
+        required: false
+        type: boolean
+        default: false
+      java-version:
+        description: "JBR version (pin to specific build for deterministic CI)"
+        required: false
+        type: string
+        default: "21.0.5"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'JSON array of platforms'
+        required: false
+        type: string
+        default: '["android","ios","desktop","webapp","server"]'
+      environment:
+        description: "Target environment"
+        required: false
+        type: choice
+        options: [dev, test, staging, prod]
+        default: dev
+      upload-artifacts:
+        description: "Upload artifacts"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.ref }}-${{ inputs.environment }}
+  cancel-in-progress: true
+
+env:
+  # Opt into Node.js 24 runtime for transitively-used JavaScript actions
+  # (e.g. actions/github-script@v7 pulled in by gradle/actions/setup-gradle).
+  # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  matrix:
+    name: Resolve build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.compute.outputs.include }}
+    steps:
+      - id: compute
+        shell: bash
+        run: |
+          PLATFORMS='${{ inputs.platforms }}'
+          ITEMS='[]'
+          for p in $(echo "$PLATFORMS" | jq -r '.[]'); do
+            case "$p" in
+              android)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg p "$p" \
+                  '. + [{platform:$p, os:"ubuntu-latest", gradle_task:":androidApp:assembleDebug", artifact_path:"androidApp/build/outputs/apk/**/*.apk", timeout:30}]') ;;
+              ios)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg p "$p" \
+                  '. + [{platform:$p, os:"macos-latest", gradle_task:":composeApp:compileKotlinIosSimulatorArm64", artifact_path:"composeApp/build/bin/**/*", timeout:45}]') ;;
+              desktop)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg p "$p" \
+                  '. + [{platform:$p, os:"ubuntu-latest", gradle_task:":composeApp:packageDistributionForCurrentOS", artifact_path:"composeApp/build/compose/binaries/**/*", timeout:25}]') ;;
+              webapp)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg p "$p" \
+                  '. + [{platform:$p, os:"ubuntu-latest", gradle_task:":composeApp:jsBrowserDistribution", artifact_path:"composeApp/build/dist/js/productionExecutable/**/*", timeout:25}]') ;;
+              server)
+                ITEMS=$(echo "$ITEMS" | jq -c --arg p "$p" \
+                  '. + [{platform:$p, os:"ubuntu-latest", gradle_task:":server:installDist", artifact_path:"server/build/install/**/*", timeout:20}]') ;;
+              *)
+                echo "::warning::Unknown platform '$p' — skipped" ;;
+            esac
+          done
+          echo "include=$ITEMS" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: [matrix]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JBR ${{ inputs.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "jetbrains"
+          token: ${{ github.token }}
+
+      - name: Cache Kotlin/Native (Konan)
+        if: matrix.platform == 'ios'
+        uses: actions/cache@v5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
+
+      - name: Build ${{ matrix.platform }}
+        run: ./gradlew ${{ matrix.gradle_task }} --no-daemon
+        env:
+          APP_ENV: ${{ inputs.environment }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+          SERVER_PORT: ${{ vars.SERVER_PORT }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+          GRADLE_OPTS: ${{ matrix.platform == 'ios' && '-Xmx4g' || '' }}
+
+      - name: Upload build artifact
+        if: ${{ inputs.upload-artifacts }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-${{ matrix.platform }}-${{ inputs.environment }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 14
+          if-no-files-found: ignore

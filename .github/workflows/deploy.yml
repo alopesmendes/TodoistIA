@@ -1,0 +1,36 @@
+name: deploy
+
+# Placeholder deploy workflow — logs intent, does not publish.
+# Real signing + store upload will be added in a follow-up under ci-cd/release.
+
+on:
+  workflow_call:
+    inputs:
+      artifact:
+        description: "Artifact to deploy: none | apk | ipa | both"
+        required: true
+        type: string
+      environment:
+        description: "Target environment (dev|test|staging|prod)"
+        required: true
+        type: string
+      version:
+        description: "Version string being deployed"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.artifact }} to ${{ inputs.environment }}
+    if: inputs.artifact != 'none'
+    # GitHub Environment protection rule gates prod behind manual approval
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Log deploy intent
+        shell: bash
+        run: |
+          echo "::notice::PLACEHOLDER deploy — artifact=${{ inputs.artifact }} env=${{ inputs.environment }} version=${{ inputs.version }}"
+          echo "TODO: plug signing + store upload (Play Console / App Store Connect / TestFlight)"

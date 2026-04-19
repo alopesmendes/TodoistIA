@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-04-19
 
 ## Overview
 
@@ -175,13 +175,13 @@ Reports are written to `<module>/build/reports/detekt/` as HTML and SARIF files.
 
 ## Principal CI Workflows
 
-| Workflow         | File             | Compile command                      | Runner          | Timeout |
-|------------------|------------------|--------------------------------------|-----------------|---------|
-| Mobile (Android) | `ci-mobile.yml`  | `:androidApp:compileDebugKotlin`     | `ubuntu-latest` | 30 min  |
+| Workflow         | File             | Compile command                              | Runner          | Timeout |
+|------------------|------------------|----------------------------------------------|-----------------|---------|
+| Mobile (Android) | `ci-mobile.yml`  | `:androidApp:compileDebugKotlin`             | `ubuntu-latest` | 30 min  |
 | Mobile (iOS)     | `ci-mobile.yml`  | `:composeApp:compileKotlinIosSimulatorArm64` | `macos-latest`  | 45 min  |
-| Desktop          | `ci-desktop.yml` | `:composeApp:compileKotlinJvm`       | `ubuntu-latest` | 20 min  |
-| Server           | `ci-server.yml`  | `:server:classes`                    | `ubuntu-latest` | 20 min  |
-| Webapp           | `ci-webapp.yml`  | `:composeApp:compileKotlinWasmJs`    | `ubuntu-latest` | 20 min  |
+| Desktop          | `ci-desktop.yml` | `:composeApp:compileKotlinJvm`               | `ubuntu-latest` | 20 min  |
+| Server           | `ci-server.yml`  | `:server:classes`                            | `ubuntu-latest` | 20 min  |
+| Webapp           | `ci-webapp.yml`  | `:composeApp:compileKotlinWasmJs`            | `ubuntu-latest` | 20 min  |
 
 **Key design**: CI step is compile-only verification, NOT artifact production. Each module compiles independently; the shared module is compiled transitively through module dependencies. iOS requires `macos-latest` for Kotlin/Native; all others use `ubuntu-latest` (cheaper and faster).
 
@@ -202,6 +202,136 @@ audit ─┘                     ├── [tests/coverage] ── code-analysis
 version ┐ (optional)         │
         ├── compile-ios ─────┘
        └── (parallel)
+```
+
+---
+
+## Gradle Task Creation Logic
+
+### How Gradle Tasks are Created
+
+Gradle tasks are created in three primary ways in this project:
+
+#### 1. **Built-in Plugin Tasks** (KMP Targets)
+
+Kotlin Multiplatform Plugin automatically generates compile tasks for each target. When you declare a target in `kotlin { }` block, Gradle creates associated tasks:
+
+```kotlin
+// In shared/build.gradle.kts
+kotlin {
+    androidLibrary { }           // Creates: :shared:compileDebugKotlin, :shared:compileReleaseKotlin
+    iosArm64()                    // Creates: :shared:compileKotlinIosArm64
+    iosSimulatorArm64()           // Creates: :shared:compileKotlinIosSimulatorArm64
+    jvm()                         // Creates: :shared:compileKotlinJvm
+    wasmJs { browser() }          // Creates: :shared:compileKotlinWasmJs
+}
+```
+
+These tasks are **implicit** — they exist because the targets are declared, not because you explicitly register them.
+
+#### 2. **Android Application Tasks** (Build Variants)
+
+Android Application Plugin creates build variant tasks automatically:
+
+```kotlin
+// In androidApp/build.gradle.kts
+android {
+    compileSdk = 35
+    defaultConfig { applicationId = "com.ailtontech.todoistia" }
+    buildTypes { getByName("release") { isMinifyEnabled = false } }
+}
+```
+
+This generates:
+- `:androidApp:compileDebugKotlin` — Compile debug variant
+- `:androidApp:compileReleaseKotlin` — Compile release variant
+- `:androidApp:assembleDebug` — Package debug APK
+- `:androidApp:assembleRelease` — Package release APK
+
+#### 3. **Custom Registered Tasks** (Root `build.gradle.kts`)
+
+The root build script explicitly registers aggregate tasks that depend on subproject tasks:
+
+```kotlin
+// In build.gradle.kts
+tasks.register("lintCheck") {
+    group = "verification"
+    description = "Runs ktlint check on all modules"
+    dependsOn(subprojects.map { "${it.path}:ktlintCheck" })
+}
+
+tasks.register("detektAll") {
+    group = "verification"
+    description = "Runs detekt on all modules"
+    dependsOn(subprojects.map { "${it.path}:detekt" })
+}
+
+tasks.register("codeAnalysis") {
+    group = "verification"
+    description = "Runs all static analysis checks (detekt + ktlint)"
+    dependsOn("detektAll", "lintCheck")
+}
+```
+
+### Task Naming Conventions
+
+All Gradle tasks follow these conventions:
+
+| Convention                     | Example                            | Scope                                       |
+|--------------------------------|------------------------------------|---------------------------------------------|
+| `:module:taskName`             | `:androidApp:compileDebugKotlin`   | Module-specific task                        |
+| `:module:taskName` (no module) | `:ktlintCheck`                     | Root-level task (no module prefix)          |
+| Camel case                     | `compileKotlinJvm`, `ktlintFormat` | Standard across all tasks                   |
+| Type prefixes                  | `compile*`, `assemble*`, `test*`   | Grouped by type: compile, build, test tasks |
+
+#### Built-in Plugin Task Prefixes
+
+| Prefix      | Plugin                        | Examples                                          |
+|-------------|-------------------------------|---------------------------------------------------|
+| `compile*`  | Kotlin, KMP Plugin            | `compileKotlinJvm`, `compileDebugKotlin`          |
+| `assemble*` | Android Plugin                | `assembleDebug`, `assembleRelease`                |
+| `ktlint*`   | ktlint Plugin                 | `ktlintCheck`, `ktlintFormat`                     |
+| `detekt*`   | detekt Plugin                 | `detekt`, `detektAll`                             |
+| `test*`     | JUnit, Kotlin Test Plugin     | `jvmTest`, `test`                                 |
+| `classes`   | Java Plugin (Kotlin/JVM only) | `:server:classes` (compile + resource processing) |
+
+### Custom Task Dependencies
+
+Custom tasks declare dependencies on other tasks to build execution chains:
+
+```kotlin
+tasks.register("coverageReport") {
+    group = "verification"
+    description = "Generates merged Kover XML + HTML coverage reports"
+    dependsOn("allTests", "koverXmlReport", "koverHtmlReport")
+}
+```
+
+When you run `./gradlew coverageReport`:
+1. Gradle first runs `allTests` (which depends on `unitTest` + `integrationTest`)
+2. Then runs `koverXmlReport` (generates XML)
+3. Then runs `koverHtmlReport` (generates HTML)
+4. Finally completes `coverageReport` (which is just a marker task)
+
+### Platform-Specific Compile Tasks
+
+Each platform has one primary compile task used in CI. These are the **minimal verification tasks** — they compile but do not package:
+
+```kotlin
+// Android: Compile Kotlin only, skip packaging
+./gradlew :androidApp:compileDebugKotlin
+
+// iOS: Compile via Kotlin/Native, skip packaging
+./gradlew :composeApp:compileKotlinIosSimulatorArm64
+
+// Desktop (JVM): Compile to bytecode
+./gradlew :composeApp:compileKotlinJvm
+
+// Server: Compile + resource processing (no packaging)
+./gradlew :server:classes
+
+// Webapp: Compile to WebAssembly
+./gradlew :composeApp:compileKotlinWasmJs
 ```
 
 ---
@@ -259,6 +389,160 @@ graph TD
 
     CA --> Detekt["detekt (all modules)"]:::analysis
     CA --> CodeQL["codeql (java-kotlin)"]:::analysis
+```
+
+---
+
+## Enhanced Job Flow Visualization
+
+### Mobile Workflow (ci-mobile.yml) — Job Dependency Graph
+
+The mobile workflow runs version bumping (optional), then splits into two independent compile jobs (Android and iOS), then runs tests and code analysis in sequence.
+
+```mermaid
+---
+title: Mobile CI Job Dependency Graph
+---
+%%{init: {'flowchart': {'curve': 'orthogonal'}}}%%
+graph TD
+    classDef trigger fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef conditional fill:#fce7f3,stroke:#ec4899,color:#500724
+    classDef parallel fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef sequential fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    classDef analysis fill:#f3e8ff,stroke:#7c3aed,color:#3b0764
+
+    PR["PR / workflow_dispatch"]:::trigger
+
+    PR --> Version["Version Bump"]:::conditional
+    Version -->|optional<br/>on manual dispatch| BuildAndroid["Build Android<br/>(:androidApp:compileDebugKotlin)"]:::parallel
+    Version -->|optional<br/>on manual dispatch| BuildIOS["Build iOS<br/>(:composeApp:compileKotlinIosSimulatorArm64)"]:::parallel
+
+    BuildAndroid --> Test["Test & Coverage<br/>(:shared:jvmTest, :composeApp:jvmTest)"]:::sequential
+    BuildIOS --> Test
+
+    Test --> CodeAnalysis["Code Analysis<br/>(detekt + CodeQL)"]:::analysis
+
+    style PR stroke:#ca8a04,stroke-width:3px
+```
+
+### Desktop Workflow (ci-desktop.yml) — Job Dependency Graph
+
+Desktop is a simpler single-platform workflow: version bump → compile → test → analysis.
+
+```mermaid
+---
+title: Desktop CI Job Dependency Graph
+---
+%%{init: {'flowchart': {'curve': 'orthogonal'}}}%%
+graph TD
+    classDef trigger fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef conditional fill:#fce7f3,stroke:#ec4899,color:#500724
+    classDef compile fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef sequential fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    classDef analysis fill:#f3e8ff,stroke:#7c3aed,color:#3b0764
+
+    PR["PR / workflow_dispatch"]:::trigger
+    PR --> Version["Version Bump"]:::conditional
+    Version --> Build["Build Desktop<br/>(:composeApp:compileKotlinJvm)"]:::compile
+    Build --> Test["Test & Coverage"]:::sequential
+    Test --> Analysis["Code Analysis"]:::analysis
+
+    style PR stroke:#ca8a04,stroke-width:3px
+```
+
+### Parallel Job Execution within Mobile Workflow
+
+The key optimization in mobile CI is that **both Android and iOS compile in parallel** (after version bump), then a single test job waits for both to finish.
+
+```mermaid
+---
+title: Parallel Compile Jobs with Shared Test Dependency
+---
+sequenceDiagram
+    participant PR as Pull Request
+    participant Version as Version Bump
+    participant Android as Build Android Job
+    participant iOS as Build iOS Job
+    participant Test as Test Job
+    participant Analysis as Code Analysis Job
+
+    PR->>Version: trigger (optional)
+    Version->>Android: gate start (can skip)
+    Version->>iOS: gate start (can skip)
+
+    par Android compile
+        Android->>Android: :androidApp:compileDebugKotlin
+    and iOS compile
+        iOS->>iOS: :composeApp:compileKotlinIosSimulatorArm64
+    end
+
+    Note over Android,iOS: Both jobs run concurrently<br/>on different runners
+
+    Android->>Test: signal success/skip
+    iOS->>Test: signal success/skip
+    Test->>Test: wait for both (if either skipped, still proceed)
+    Test->>Test: run :shared:jvmTest :composeApp:jvmTest
+    Test->>Analysis: signal success
+    Analysis->>Analysis: run detekt + CodeQL
+```
+
+### Conditional Job Execution
+
+Both Mobile and Desktop workflows support **conditional job skipping** via `workflow_dispatch` inputs:
+
+#### Mobile Conditions
+- **build-android** skips if: `workflow_dispatch` AND `inputs.build_android == false`
+- **build-ios** skips if: `workflow_dispatch` AND `inputs.build_ios == false`
+- **test** skips if: `workflow_dispatch` AND `inputs.skip_tests == true`
+
+#### Reusable Workflow Integration
+
+All four principal workflows (Mobile, Desktop, Server, Webapp) call the same **three reusable workflows** as initial gating jobs (they run in parallel):
+
+```mermaid
+---
+title: Reusable Workflow Integration Pattern
+---
+%%{init: {'flowchart': {'curve': 'orthogonal'}}}%%
+graph TD
+    classDef principal fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef reusable fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    classDef platform fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+    PR["PR Triggers All Four"]:::principal
+
+    PR --> Mobile["ci-mobile.yml"]:::principal
+    PR --> Desktop["ci-desktop.yml"]:::principal
+    PR --> Server["ci-server.yml"]:::principal
+    PR --> Webapp["ci-webapp.yml"]:::principal
+
+    Mobile --> Lint["lint.yml<br/>(reusable)"]:::reusable
+    Mobile --> Audit["dependency-audit.yml<br/>(reusable)"]:::reusable
+    Mobile --> CA["code-analysis.yml<br/>(reusable)"]:::reusable
+
+    Desktop --> Lint
+    Server --> Lint
+    Webapp --> Lint
+
+    Desktop --> Audit
+    Server --> Audit
+    Webapp --> Audit
+
+    Desktop --> CA
+    Server --> CA
+    Webapp --> CA
+
+    Lint --> CompileAndroid["Compile Android"]:::platform
+    Lint --> CompileIOS["Compile iOS"]:::platform
+    Lint --> CompileDesktop["Compile Desktop"]:::platform
+    Lint --> CompileServer["Compile Server"]:::platform
+    Lint --> CompileWasm["Compile Webapp"]:::platform
+
+    Audit --> CompileAndroid
+    Audit --> CompileIOS
+    Audit --> CompileDesktop
+    Audit --> CompileServer
+    Audit --> CompileWasm
 ```
 
 ---

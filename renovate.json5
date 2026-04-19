@@ -5,11 +5,12 @@
   ],
   "baseBranches": ["develop", "staging", "master"],
   "rangeStrategy": "pin",
-  "schedule": ["every weekend"],
+  // Mondays before 4am — after Sunday 02:00 UTC OWASP audit cron has completed
+  "schedule": ["before 4am on monday"],
   "prConcurrentLimit": 5,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency Dashboard",
-  "labels": ["chore"],
+  "labels": ["dependencies"],
   "commitMessagePrefix": ":arrow_up:",
   "branchPrefix": "deps/",
 
@@ -20,23 +21,27 @@
   "requiredStatusChecks": ["Dependency Vulnerability Scan"],
 
   "packageRules": [
-    // ── Kotlin ecosystem ──────────────────────────────────────────────────
+    // ── KMP Toolchain (AGP + Kotlin + Compose must bump together) ────────
     {
-      "groupName": "Kotlin",
+      "groupName": "KMP Toolchain",
       "matchPackagePrefixes": [
         "org.jetbrains.kotlin",
-        "org.jetbrains.kotlinx"
-      ],
-      "automerge": false
-    },
-
-    // ── Compose Multiplatform ────────────────────────────────────────────
-    {
-      "groupName": "Compose Multiplatform",
-      "matchPackagePrefixes": [
         "org.jetbrains.compose",
         "org.jetbrains.androidx"
       ],
+      "matchPackageNames": [
+        "com.android.application",
+        "com.android.library",
+        "com.android.kotlin.multiplatform.library"
+      ],
+      "automerge": false,
+      "labels": ["dependencies", "kmp-toolchain"]
+    },
+
+    // ── KotlinX libraries (separate — not coupled to compiler trio) ──────
+    {
+      "groupName": "KotlinX",
+      "matchPackagePrefixes": ["org.jetbrains.kotlinx"],
       "automerge": false
     },
 
@@ -51,17 +56,6 @@
     {
       "groupName": "AndroidX",
       "matchPackagePrefixes": ["androidx."],
-      "automerge": false
-    },
-
-    // ── Android Gradle Plugin ─────────────────────────────────────────────
-    {
-      "groupName": "AGP",
-      "matchPackageNames": [
-        "com.android.application",
-        "com.android.library",
-        "com.android.kotlin.multiplatform.library"
-      ],
       "automerge": false
     },
 
@@ -84,7 +78,7 @@
     {
       "matchUpdateTypes": ["major"],
       "automerge": false,
-      "labels": ["chore", "breaking-change"]
+      "labels": ["dependencies", "breaking-change"]
     }
   ],
 
