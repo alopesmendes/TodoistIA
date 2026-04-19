@@ -1,6 +1,8 @@
 name: code-analysis
 
 on:
+  push:
+    branches: ["master"]
   workflow_call:
     inputs:
       run-detekt:
@@ -19,10 +21,10 @@ on:
         type: string
         default: "detektAll"
       java-version:
-        description: "JDK major version"
+        description: "JBR version (pin to specific build for deterministic CI)"
         required: false
         type: string
-        default: "17"
+        default: "21.0.5"
   workflow_dispatch:
     inputs:
       run-detekt:
@@ -41,35 +43,45 @@ on:
         type: string
         default: "detektAll"
       java-version:
-        description: "JDK major version"
+        description: "JBR version (pin to specific build for deterministic CI)"
         required: false
         type: string
-        default: "17"
+        default: "21.0.5"
 
 concurrency:
-  group: code-analysis-${{ github.ref }}
-  cancel-in-progress: true
+  group: code-analysis-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
   security-events: write
 
+env:
+  # Opt into Node.js 24 runtime for transitively-used JavaScript actions
+  # (e.g. actions/github-script@v7 pulled in by gradle/actions/setup-gradle).
+  # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Keep file-coverage info on PR analyses (silences April 2026 deprecation notice).
+  # See: https://github.blog/changelog/ — CodeQL Action file coverage on PRs.
+  CODEQL_ACTION_FILE_COVERAGE_ON_PRS: "true"
+
 jobs:
   detekt:
     name: Detekt Analysis
-    if: ${{ inputs.run-detekt }}
+    if: ${{ github.event_name == 'push' || inputs.run-detekt }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up JDK ${{ inputs.java-version }}
+      - name: Set up JBR ${{ inputs.java-version || '21.0.5' }}
         uses: actions/setup-java@v5
         with:
-          java-version: ${{ inputs.java-version }}
-          distribution: "temurin"
+          java-version: ${{ inputs.java-version || '21.0.5' }}
+          distribution: "jetbrains"
+          token: ${{ github.token }}
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
@@ -77,51 +89,76 @@ jobs:
           cache-read-only: ${{ !contains(fromJson('["refs/heads/master","refs/heads/develop","refs/heads/staging"]'), github.ref) }}
 
       - name: Run detekt on all modules
-        run: ./gradlew ${{ inputs.detekt-task }} --no-daemon --continue
+        run: ./gradlew ${{ inputs.detekt-task || 'detektAll' }} --no-daemon --continue
 
       - name: Upload detekt reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: detekt-reports
           path: "**/build/reports/detekt/"
           retention-days: 14
           if-no-files-found: ignore
 
-      - name: Upload detekt SARIF to GitHub Security tab
+      - name: Merge detekt SARIF files
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        shell: bash
+        run: |
+          mkdir -p build/reports/detekt
+          mapfile -t files < <(find . -type f -name '*.sarif' -path '*/reports/detekt/*' 2>/dev/null || true)
+          if [ "${#files[@]}" -gt 0 ]; then
+            # CodeQL upload-sarif rejects multiple runs sharing one category.
+            # Collapse every detekt run into a single run, merging results/invocations.
+            # See: https://github.blog/changelog/2025-07-21-code-scanning-will-stop-combining-multiple-sarif-runs-uploaded-in-the-same-sarif-file/
+            jq -s '
+              {
+                version: "2.1.0",
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                runs: [
+                  (.[0].runs[0] // {}) + {
+                    results: ([.[] | .runs[]?.results // []] | add),
+                    invocations: ([.[] | .runs[]?.invocations // []] | add)
+                  }
+                ]
+              }
+            ' "${files[@]}" > build/reports/detekt/merged.sarif
+          fi
+
+      - name: Upload detekt SARIF to GitHub Security tab
+        if: always() && hashFiles('build/reports/detekt/merged.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: .
+          sarif_file: build/reports/detekt/merged.sarif
           category: detekt
         continue-on-error: true
 
   codeql:
     name: CodeQL Analysis
-    if: ${{ inputs.run-codeql }}
+    if: ${{ github.event_name == 'push' || inputs.run-codeql }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up JDK ${{ inputs.java-version }}
+      - name: Set up JBR ${{ inputs.java-version || '21.0.5' }}
         uses: actions/setup-java@v5
         with:
-          java-version: ${{ inputs.java-version }}
-          distribution: "temurin"
+          java-version: ${{ inputs.java-version || '21.0.5' }}
+          distribution: "jetbrains"
+          token: ${{ github.token }}
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: codeql-kotlin

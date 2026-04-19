@@ -10,6 +10,11 @@ name: CI
 # must not be cancelled by subsequent pushes, so the group key isolates them.
 
 on:
+  # Push to default branch needed so CodeQL Action (invoked via analysis sub-workflow)
+  # can publish code-scanning alerts on the Security tab and silences the
+  # "Please specify an on.push hook" workflow analysis warning.
+  push:
+    branches: ["master"]
   pull_request:
     branches: ["master", "develop", "staging"]
   workflow_dispatch:
@@ -51,6 +56,12 @@ concurrency:
 permissions:
   contents: write
   security-events: write
+
+env:
+  # Opt into Node.js 24 runtime for transitively-used JavaScript actions
+  # (e.g. actions/github-script@v7 pulled in by gradle/actions/setup-gradle).
+  # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ── Resolve platform list for build matrix ─────────────────────────────
